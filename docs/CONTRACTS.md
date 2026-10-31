@@ -140,8 +140,18 @@ Fixed list of the two demo districts. 200:
 ```json
 [ { "code": "<string>", "name": "<string>", "bbox": ["<min_lon>", "<min_lat>", "<max_lon>", "<max_lat>"] } ]
 ```
-Exactly two items. The codes, names, bounding boxes, their official source, and these field names
-are [R-1].
+Exactly two items, the demo districts:
+
+| `name` | State | CRIDA plan file (in `data/`) | Plan date | `plan_year` |
+|---|---|---|---|---|
+| Ludhiana | Punjab | `PUNJAB 5-Ludhiana 30.04.2011.pdf` | 30.04.2011 | 2011 |
+| Dharwad | Karnataka | `KA7-Dharwad 3.2.2011.pdf` | 3.2.2011 | 2011 |
+
+The `code` values, the `bbox` values and their official source, and these field names are [R-1].
+The plans' own text gives only these location facts: Ludhiana, district headquarters at
+30°54'20.87"N 75°50'45.35"E (a point, not a box); Dharwad, "15°15' to 15°35' N, 75°00' to 75°20' E"
+(a coarse range written in the plan). Neither is an official district boundary, so neither is used
+as `bbox` until you confirm.
 
 ### POST /api/fields
 Register a field.
@@ -544,9 +554,11 @@ Nothing below was resolved silently; each needs a ruling.
 
 Provisional values already written above are tagged with the same R-number.
 
-- **R-1 Districts.** The two demo districts' codes, names, bounding boxes, the official dataset the
-  boxes come from (no invented data), where the list lives (config vs table), and the
-  `GET /api/districts` field names.
+- **R-1 Districts.** Names are decided (Ludhiana, Dharwad). Still open: the `code` scheme (the
+  plan filenames "PUNJAB 5" and "KA7" are CRIDA numbering, not an official code; use them, or an
+  official code such as LGD?), the `bbox` values and the official boundary dataset they come from
+  (no invented data), where the list lives (config vs table), and the `GET /api/districts` field
+  names.
 - **R-2 Vocabularies.** The Evidence `variable` names, Evidence `id` format, `Risk.crop_stage`
   values, and `observations.variable` (same names).
 - **R-3 Risk detail.** The `members` shape; `severity` when `probability` is null; how a heavy-rain
