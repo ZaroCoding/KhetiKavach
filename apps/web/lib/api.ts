@@ -1,8 +1,6 @@
-export type Health = {
-  status: string;
-  version: string;
-  db: string;
-};
+import type { components } from "./api-types";
+
+export type Health = components["schemas"]["HealthOut"];
 
 export class ApiError extends Error {}
 

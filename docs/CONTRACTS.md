@@ -37,6 +37,7 @@ FastAPI's default 422 body is overridden with a handler that emits this envelope
 | 401 | `UNAUTHORIZED` [R-7] | Missing/wrong `X-Device-Key`, `X-Admin-Key`, or Telegram secret |
 | 503 | `UPSTREAM_UNAVAILABLE` [R-7] | A required upstream outage with no fallback or cache |
 | 500 | `INTERNAL_ERROR` [R-7] | Unhandled server error |
+| 501 | `NOT_IMPLEMENTED` | Scaffold only: the endpoint validates its input, then fails loudly. Removed when the endpoint is implemented |
 
 For 422, `details` is `[{ "field": "<dotted path>", "reason": "<human-readable>" }]` [R-7].
 `GET /health` is the one exception: its 503 returns the health body, not this envelope [R-7].
@@ -51,8 +52,9 @@ open_meteo_ensemble     open_meteo_forecast     open_meteo_archive
 open_meteo_historical_forecast
 imd_gridded             imd_api                 nasa_power
 bhuvan                  gemini                  crida_plans
-esp32_sensor
+esp32_sensor            nominatim
 ```
+`nominatim` was added for the backend-proxied village search (`GET /api/geocode`).
 Used in `Evidence.source`, `Source.name`, `data_freshness.per_source` keys, `/health` `sources`
 keys, admin `{source}` path params, and the CHECK constraints on `observations.source`,
 `api_cache.source`, and `source_switches.source`.
@@ -142,16 +144,41 @@ Fixed list of the two demo districts. 200:
 ```
 Exactly two items, the demo districts:
 
-| `name` | State | CRIDA plan file (in `data/`) | Plan date | `plan_year` |
-|---|---|---|---|---|
-| Ludhiana | Punjab | `PUNJAB 5-Ludhiana 30.04.2011.pdf` | 30.04.2011 | 2011 |
-| Dharwad | Karnataka | `KA7-Dharwad 3.2.2011.pdf` | 3.2.2011 | 2011 |
+| `code` | `name` | State | CRIDA plan file (in `data/crida/`) | `plan_year` | `bbox` [min_lon, min_lat, max_lon, max_lat] |
+|---|---|---|---|---|---|
+| `PUNJAB5` [R-1] | Ludhiana | Punjab | `PUNJAB 5-Ludhiana 30.04.2011.pdf` | 2011 | [75.355427, 30.559983, 76.374883, 31.01921] |
+| `KA7` | Dharwad | Karnataka | `KA7-Dharwad 3.2.2011.pdf` | 2011 | [74.727062, 15.037684, 75.556356, 15.702168] |
 
-The `code` values, the `bbox` values and their official source, and these field names are [R-1].
-The plans' own text gives only these location facts: Ludhiana, district headquarters at
-30°54'20.87"N 75°50'45.35"E (a point, not a box); Dharwad, "15°15' to 15°35' N, 75°00' to 75°20' E"
-(a coarse range written in the plan). Neither is an official district boundary, so neither is used
-as `bbox` until you confirm.
+- **Codes are CRIDA codes** (ruling). They come from the plan filenames "PUNJAB 5" and "KA7"; the
+  space in "PUNJAB 5" is removed so the code is a single token [R-1].
+- **`bbox` values are the extents of the district polygons in DataMeet's
+  `Districts/Census_2011/2011_Dist` shapefile** (WGS84, 641 districts; records matched on
+  `DISTRICT` = Ludhiana and Dharwad), rounded to 6 decimals. Source:
+  https://github.com/datameet/maps/tree/master/Districts/Census_2011. Licence: Creative Commons
+  Attribution 2.5 India (per its Districts README); the UI/README must attribute "DataMeet
+  (Census of India 2011 boundaries), CC BY 2.5 IN". These are Census 2011 boundaries, so they may
+  differ slightly from current administrative limits. As a sanity check, Ludhiana's HQ point and
+  Dharwad's plan-stated latitude/longitude range from the CRIDA PDFs both fall inside these boxes.
+- **Scope is strict (ruling):** only these two districts are accepted anywhere in the API. A field
+  whose centroid is outside the selected district's `bbox` is a 422, and any other `district_code`
+  is a 422.
+- Field names of the response items and where the list lives (a generated data file vs config) are
+  [R-1].
+
+### GET /api/geocode
+Village/place search, proxied through the backend (ruling on C-1): the browser never calls
+Nominatim. Query: `q` (required, search text). Response **200**:
+```json
+[ { "display_name": "<string>", "lat": "<number>", "lon": "<number>" } ]
+```
+- The `nominatim` connector sends the request to OpenStreetMap Nominatim restricted to India
+  (`countrycodes=in`), through the standard connector path: timeout, one retry, `api_cache`
+  read-through, and kill switch.
+- Nominatim's public usage policy requires an identifying `User-Agent` and at most 1 request per
+  second; the connector enforces both and caches results so repeated searches do not hit upstream.
+- Upstream down with nothing cached: 503 `UPSTREAM_UNAVAILABLE`. Missing/empty `q`: 422.
+- Result item fields, result count limit, and whether results are filtered to the two pilot
+  districts: [R-12].
 
 ### POST /api/fields
 Register a field.
@@ -342,7 +369,7 @@ After an `error` event a `done` with `status: "failed"` always follows [R-4]. `d
 
 PostgreSQL 16 with PostGIS and pgvector; extensions `postgis`, `vector` enabled in the first
 migration. All columns `NOT NULL` unless marked `NULL`. Enums are `text` with CHECK constraints.
-`<SourceCheck>` = `CHECK (source IN (...the 14 SourceName values...))`.
+`<SourceCheck>` = `CHECK (source IN (...the 15 SourceName values...))`.
 Entries marked *(new)* are additions to the section F column lists, required by the decisions.
 
 ### fields
@@ -499,7 +526,7 @@ A source with no row is enabled [R-7].
 - **Q-2** timestamptz UTC; sowing_date/as_of are date; doubles for values; text + CHECK for enums; jsonb payloads; geometry(Polygon,4326); vector(384). Exact types listed per column above.
 - **Q-3** Error envelope `{error:{code,message,details}}`; 422 validation (FastAPI default overridden), 404 `NOT_FOUND`, 503 upstream outage; `POST /api/fields` returns 201.
 - **Q-4** Crop enum is exactly wheat, rice, cotton, soybean.
-- **Q-5** Client sends `district_code` from a fixed two-district list (`GET /api/districts`); server checks centroid inside the district bbox else 422; no village-search endpoint, browser calls Nominatim directly.
+- **Q-5** Client sends `district_code` from a fixed two-district list (`GET /api/districts`); server checks centroid inside the district bbox else 422. *Amended:* village search is now `GET /api/geocode`, proxied through the backend (was: browser calls Nominatim directly). Codes are CRIDA codes; bboxes come from DataMeet.
 - **Q-6** `GET /api/fields`: all fields newest first, cap 200, optional `?district_code=`, no pagination, no auth.
 - **Q-7** `as_of` is a date, 2021-01-01..today, omitted/null = live (stored NULL), future = 422.
 - **Q-8** Language is `en|hi|pa`, default `en`.
@@ -508,7 +535,7 @@ A source with no row is enabled [R-7].
 - **Q-11** Evidence `{id,variable,value,unit,source,source_url,fetched_at,status}`; required id/variable/source/fetched_at/status; value number or null; series replaces value for time series.
 - **Q-12** PlanAction `{id,when,text,language,citation{chunk_id,doc_title,page,plan_year},numbers_used[]}`; citation required.
 - **Q-13** Source `{name,url,status,fetched_at,attribution}`; data_freshness `{oldest_fetched_at,newest_fetched_at,per_source}`.
-- **Q-14** Source names are the 14-value `SourceName` enum, defined once.
+- **Q-14** Source names are the `SourceName` enum, defined once. *Amended:* 15 values (`nominatim` added).
 - **Q-15** P1 sensor ingest: `X-Device-Key`, 202 `{received:true}`, 401 on bad key; new `sensor_devices`; `sensor_readings` columns as specified.
 - **Q-16** Webhook `POST /api/telegram/webhook` returns 200 `{ok:true}`; `fields.short_code` is a unique 6-char uppercase alphanumeric; `alert_subscriptions` columns as specified.
 - **Q-17** `POST /api/jobs/monitor` returns `{checked,alerted,skipped,errors}`; monitored = active subscription; alert at probability >= 0.5 or severity up a band; 24 h hazard+severity dedupe per chat; `alerts_sent` columns as specified.
@@ -523,14 +550,17 @@ A source with no row is enabled [R-7].
 
 Nothing below was resolved silently; each needs a ruling.
 
-- **C-1 (Q-5 vs CLAUDE.md rule 3, ARCHITECTURE, STRATEGY F).** The browser calls Nominatim
-  directly. CLAUDE.md says every external call goes through `apps/api/app/connectors` and the
-  frontend never calls an external data source; ARCHITECTURE shows the UI talking only to the API.
-  Nominatim (and the basemap tiles) are also outside the `SourceName` enum.
-- **C-2 (Q-5 vs STRATEGY F and J.6).** STRATEGY validates "outside India" and the demo script has a
-  judge pick "any point in India". A per-district bbox check makes any in-India point outside the
-  two districts a 422, so that demo step would fail. STRATEGY also derives district via Bhuvan; the
-  decision has the client send it, leaving `bhuvan` in the enum unused.
+- **C-1 (Q-5 vs CLAUDE.md rule 3, ARCHITECTURE, STRATEGY F). RESOLVED: proxy through the
+  backend.** Nominatim is called only by a `nominatim` connector behind `GET /api/geocode`
+  (added to `SourceName`). CLAUDE.md rule 3 stands unchanged. Follow-ups: ARCHITECTURE.md was
+  updated for it; the basemap tiles (EOX Sentinel-2 cloudless, loaded by the browser per runbook
+  Prompt 7) are still a browser-side external request: see R-12.
+- **C-2 (Q-5 vs STRATEGY F and J.6). RESOLVED: strictly the two pilot districts.** Any point
+  outside Ludhiana or Dharwad is a 422. This means STRATEGY J.6 ("a judge picks any point in
+  India") cannot run as written; the demo step must become "a judge picks any point; points
+  outside the two districts show the 422 with its reason". STRATEGY's "outside India" rule is
+  subsumed by the district check. STRATEGY derives district via Bhuvan, but the client sends it, so
+  `bhuvan` stays in the enum, unused. STRATEGY.md itself has not been edited.
 - **C-3 (Q-20 vs STRATEGY F, ARCHITECTURE).** Both list six SSE events; Q-20 adds a seventh, `error`.
 - **C-4 (Q-3 vs Q-18).** "All errors use the envelope" but `/health` returns the health body on 503.
   Treated here as the exception.
@@ -554,11 +584,11 @@ Nothing below was resolved silently; each needs a ruling.
 
 Provisional values already written above are tagged with the same R-number.
 
-- **R-1 Districts.** Names are decided (Ludhiana, Dharwad). Still open: the `code` scheme (the
-  plan filenames "PUNJAB 5" and "KA7" are CRIDA numbering, not an official code; use them, or an
-  official code such as LGD?), the `bbox` values and the official boundary dataset they come from
-  (no invented data), where the list lives (config vs table), and the `GET /api/districts` field
-  names.
+- **R-1 Districts.** Mostly decided: codes are CRIDA codes, bboxes come from DataMeet (values in
+  `GET /api/districts`). Still open: confirm the single-token codes `PUNJAB5` and `KA7` (the
+  Ludhiana filename prefix has a space: "PUNJAB 5"); where the list lives (a generated data file
+  with the DataMeet attribution vs config); the `GET /api/districts` response field names (the
+  `state` and `plan_year` columns in the table are not in the response shape yet).
 - **R-2 Vocabularies.** The Evidence `variable` names, Evidence `id` format, `Risk.crop_stage`
   values, and `observations.variable` (same names).
 - **R-3 Risk detail.** The `members` shape; `severity` when `probability` is null; how a heavy-rain
@@ -584,3 +614,8 @@ Provisional values already written above are tagged with the same R-number.
   (inside the roughly 3-day ensemble-member window) is handled: `replay` mode versus ensemble.
 - **R-11 Degraded status.** The exact definition of `completed_degraded`, and `model_version` while
   an assessment is not yet complete.
+- **R-12 Geocode and basemap.** `GET /api/geocode` result item fields, the result count cap, and
+  whether results are filtered to the two pilot districts' bounding boxes. Also: the map basemap
+  tiles are fetched by the browser directly from the tile provider (runbook Prompt 7); either
+  allow that as an explicit exception to CLAUDE.md rule 3 (tiles are imagery, not data) or proxy
+  tiles through the API.

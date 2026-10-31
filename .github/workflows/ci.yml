@@ -18,7 +18,24 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy app
+      # PostGIS + pgvector, built from the same Dockerfile as docker compose.
+      - name: Start database
+        working-directory: .
+        run: |
+          docker build -t khetkavach-db -f infra/db.Dockerfile .
+          docker run -d --name khetkavach-db -p 5432:5432 \
+            -e POSTGRES_USER=khetkavach -e POSTGRES_PASSWORD=ci-only-password \
+            -e POSTGRES_DB=khetkavach khetkavach-db
+          for i in $(seq 1 30); do
+            docker exec khetkavach-db pg_isready -U khetkavach -d khetkavach && break
+            sleep 2
+          done
+      - run: uv run alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+psycopg://khetkavach:ci-only-password@localhost:5432/khetkavach
       - run: uv run pytest
+        env:
+          DATABASE_URL: postgresql+psycopg://khetkavach:ci-only-password@localhost:5432/khetkavach
 
   web:
     runs-on: ubuntu-latest

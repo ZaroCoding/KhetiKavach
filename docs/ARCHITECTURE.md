@@ -29,9 +29,11 @@ flowchart LR
     OM["Open-Meteo<br/>ensemble, forecast, archive"]
     IMD["IMD gridded rainfall, IMD API"]
     BH["Bhuvan API"]
+    NM["Nominatim (OpenStreetMap)<br/>village search"]
     GM["Gemini Flash"]
   end
   UI -->|"POST /api/assessments"| R
+  UI -->|"GET /api/geocode"| R
   R -->|"SSE trace events"| UI
   ESP -->|"POST /api/sensors/ingest"| R
   R --> AG
@@ -45,6 +47,7 @@ flowchart LR
   CN --> OM
   CN --> IMD
   CN --> BH
+  CN --> NM
   CN <--> DB
   RE <--> DB
   RG <--> DB
@@ -116,6 +119,22 @@ back to a rule-based plan built directly from the passages.
 `POST /api/jobs/monitor` with an admin key). Re-assesses each monitored field via the same agent
 and triggers alerts on threshold crossings.
 
+## Persistence and API scaffold (as built)
+
+- **Schema.** `apps/api/app/models/tables.py` maps every table in `CONTRACTS.md` (SQLAlchemy 2,
+  GeoAlchemy2 for `fields.geom`, pgvector for `doc_chunks.embedding`). `apps/api/migrations/`
+  (Alembic) owns the DDL: `0001_initial` enables `postgis` and `vector` and creates all 12 tables,
+  the GiST index on `fields.geom` and the HNSW index on `doc_chunks.embedding`. `uv run alembic
+  check` must report no drift.
+- **Contracts in code.** `apps/api/app/schemas/` holds the Pydantic v2 models for every request,
+  response and SSE event. The TypeScript types in `apps/web/lib/api-types.ts` are generated from
+  `/openapi.json` by `pnpm gen:api-types`.
+- **Scaffolded endpoints.** Every endpoint except `/health` validates its input (422 with a
+  reason) and then returns 501 `NOT_IMPLEMENTED`, documented in OpenAPI. Each stub is replaced by
+  the prompt that implements it.
+- **Health.** `GET /health` runs `SELECT 1` and reads `source_switches`. It returns 503 only when
+  the database is down.
+
 **Connectors.** The sole gateway to the outside world. Each connector wraps one source with a
 timeout (8 s weather, 20 s imagery), one retry with backoff, a named fallback source, then the
 last cached real value, backed by a read-through `api_cache`. Every returned value carries
@@ -129,4 +148,5 @@ vectors, sensor readings, and alert subscriptions/history.
 **External sources.** Planetary Computer STAC (Sentinel-2/1) with Copernicus Sentinel Hub as
 fallback; Open-Meteo for ensemble, forecast, and archive (NASA POWER fallback); IMD gridded
 rainfall for history and the IMD API for an optional warnings overlay; Bhuvan for reverse
-geocoding; Gemini Flash for plan drafting only.
+geocoding; Nominatim (OpenStreetMap) for village search, called only by the backend through
+`GET /api/geocode`, never by the browser; Gemini Flash for plan drafting only.

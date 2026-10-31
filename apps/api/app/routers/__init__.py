@@ -1,1 +1,1 @@
-"""HTTP routers."""
+"""HTTP routers, one module per resource."""
