@@ -27,3 +27,7 @@ next-env.d.ts
 # imdlib downloads
 apps/api/data/
 .neon
+
+# local-only material (screenshots are regenerated into docs/img)
+screenshots/
+layout-component-library/
