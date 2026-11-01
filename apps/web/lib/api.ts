@@ -24,6 +24,14 @@ export class ApiError extends Error {
 }
 
 export function apiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    try {
+      const override = localStorage.getItem("KHETKAVACH_API_URL");
+      if (override) return override.replace(/\/$/, "");
+    } catch {
+      // ignore storage access errors
+    }
+  }
   const url = process.env.NEXT_PUBLIC_API_URL;
   if (!url) {
     throw new ApiError("NEXT_PUBLIC_API_URL is not set");
@@ -35,12 +43,30 @@ function isErrorBody(body: unknown): body is ApiErrorBody {
   return typeof body === "object" && body !== null && "error" in body;
 }
 
+function handleFetchError(err: unknown, base: string, path: string): never {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("network")) {
+    throw new ApiError(
+      `Cannot reach API at ${base}${path} (${msg}). Check that your backend is running on HTTPS and CORS allows this domain.`,
+      0,
+      "NETWORK_ERROR",
+    );
+  }
+  throw err;
+}
+
 async function request<T>(path: string, init?: RequestInit, fetchImpl: typeof fetch = fetch): Promise<T> {
-  const response = await fetchImpl(`${apiBaseUrl()}${path}`, {
-    cache: "no-store",
-    ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
-  });
+  const base = apiBaseUrl();
+  let response: Response;
+  try {
+    response = await fetchImpl(`${base}${path}`, {
+      cache: "no-store",
+      ...init,
+      headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    });
+  } catch (err) {
+    handleFetchError(err, base, path);
+  }
   if (!response.ok) {
     let message = `API ${path} returned HTTP ${response.status}`;
     let code = "ERROR";
@@ -59,7 +85,13 @@ async function request<T>(path: string, init?: RequestInit, fetchImpl: typeof fe
 }
 
 export async function fetchHealth(fetchImpl: typeof fetch = fetch): Promise<Health> {
-  const response = await fetchImpl(`${apiBaseUrl()}/health`, { cache: "no-store" });
+  const base = apiBaseUrl();
+  let response: Response;
+  try {
+    response = await fetchImpl(`${base}/health`, { cache: "no-store" });
+  } catch (err) {
+    handleFetchError(err, base, "/health");
+  }
   if (!response.ok) {
     throw new ApiError(`API /health returned HTTP ${response.status}`, response.status);
   }

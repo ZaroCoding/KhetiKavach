@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Comma-separated list of browser origins allowed by CORS.
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "*"
     database_url: str = "postgresql://khetkavach:khetkavach@localhost:5432/khetkavach"
     admin_key: str = ""
     log_level: str = "INFO"
