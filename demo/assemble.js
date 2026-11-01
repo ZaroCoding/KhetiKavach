@@ -14,6 +14,12 @@ const OUT = path.join(__dirname, "scenes");
 const CARDS = path.join(__dirname, "cards");
 const MAX = 3;
 const scenes = JSON.parse(fs.readFileSync(path.join(__dirname, "scenes.json"), "utf8")).scenes;
+// Optional per-take lengths: demo/clips/fit.json maps a scene number to seconds.
+const fitFile = path.join(CLIPS, "fit.json");
+if (fs.existsSync(fitFile)) {
+  const fit = JSON.parse(fs.readFileSync(fitFile, "utf8"));
+  for (const sc of scenes) sc.seconds = fit[sc.n] ?? sc.seconds;
+}
 const ff = (args) => execFileSync(FFMPEG, ["-v", "error", "-y", ...args], { stdio: "inherit" });
 
 async function labels(speeds) {
@@ -66,7 +72,7 @@ async function labels(speeds) {
       parts.push([cur, 9999, 1]);
       const seg = parts.map(([a, b, k], i) => `[0:v]trim=start=${a}:end=${b},setpts=(PTS-STARTPTS)/${k},fps=30[s${i}]`).join(";");
       const enable = shown.map(([a, b]) => `between(t,${a.toFixed(2)},${b.toFixed(2)})`).join("+");
-      const fc = `${seg};${parts.map((_, i) => `[s${i}]`).join("")}concat=n=${parts.length}:v=1:a=0[c];[c][1:v]overlay=W-w-24:18:enable='${enable}',tpad=stop_mode=clone:stop_duration=${T}[v]`;
+      const fc = `${seg};${parts.map((_, i) => `[s${i}]`).join("")}concat=n=${parts.length}:v=1:a=0[c];[c][1:v]overlay=W-w-24:H-h-20:enable='${enable}',tpad=stop_mode=clone:stop_duration=${T}[v]`;
       ff(["-i", input, "-i", path.join(CARDS, `speed-${p.speed}.png`), "-filter_complex", fc, "-map", "[v]", "-t", String(T), ...enc, out]);
     }
     console.log(`scene ${p.name}: ${T} s, wait speed ${p.speed}x`);
