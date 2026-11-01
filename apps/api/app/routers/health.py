@@ -1,5 +1,6 @@
 """GET /health (CONTRACTS.md): 200 when ok or degraded, 503 only when the database is down."""
 
+import asyncio
 import time
 from importlib.metadata import PackageNotFoundError, version
 
@@ -11,6 +12,10 @@ from app.risk import model as dry_model
 from app.schemas import SOURCE_NAMES, DbHealth, HealthResponse, Latency, SourceHealth
 
 router = APIRouter()
+
+_CACHE_TTL_S = 10.0
+_cached_body: HealthResponse | None = None
+_cached_time: float = 0.0
 
 
 def _package_version() -> str:
@@ -29,6 +34,14 @@ def _percentile(values: list[int], q: float) -> int | None:
 
 @router.get("/health", response_model=HealthResponse)
 async def health() -> JSONResponse:
+    global _cached_body, _cached_time
+    now = time.monotonic()
+    if _cached_body is not None and (now - _cached_time) < _CACHE_TTL_S:
+        return JSONResponse(
+            _cached_body.model_dump(mode="json"),
+            status_code=503 if _cached_body.db.status == "down" else 200,
+        )
+
     metrics = dry_model.metrics()
     model_version = str(metrics["version"]) if metrics else None
     sources = {
@@ -42,16 +55,21 @@ async def health() -> JSONResponse:
     if db.is_connected():
         try:
             t0 = time.perf_counter()
-            await db.pool().fetchval("SELECT 1")
-            db_health = DbHealth(status="ok", latency_ms=int((time.perf_counter() - t0) * 1000))
-            rows = await db.pool().fetch(
-                """SELECT s.source, h.last_ok_at, h.last_error_at, h.last_latency_ms,
-                          COALESCE(w.disabled, false) AS disabled
-                   FROM unnest($1::text[]) AS s(source)
-                   LEFT JOIN source_health h ON h.source = s.source
-                   LEFT JOIN source_switches w ON w.source = s.source""",
-                list(SOURCE_NAMES),
+            sources_query = """SELECT s.source, h.last_ok_at, h.last_error_at, h.last_latency_ms,
+                                      COALESCE(w.disabled, false) AS disabled
+                               FROM unnest($1::text[]) AS s(source)
+                               LEFT JOIN source_health h ON h.source = s.source
+                               LEFT JOIN source_switches w ON w.source = s.source"""
+            durations_query = """
+                SELECT (EXTRACT(EPOCH FROM (completed_at - created_at)) * 1000)::int AS ms
+                FROM assessments WHERE status IN ('completed', 'completed_degraded')
+                ORDER BY completed_at DESC LIMIT 10
+            """
+            rows, durations = await asyncio.gather(
+                db.pool().fetch(sources_query, list(SOURCE_NAMES)),
+                db.pool().fetch(durations_query),
             )
+            db_health = DbHealth(status="ok", latency_ms=int((time.perf_counter() - t0) * 1000))
             for r in rows:
                 ok, err = r["last_ok_at"], r["last_error_at"]
                 status = "unknown"
@@ -65,11 +83,6 @@ async def health() -> JSONResponse:
                     last_ok_at=ok,
                     disabled=r["disabled"],
                 )
-            durations = await db.pool().fetch(
-                """SELECT (EXTRACT(EPOCH FROM (completed_at - created_at)) * 1000)::int AS ms
-                   FROM assessments WHERE status IN ('completed', 'completed_degraded')
-                   ORDER BY completed_at DESC LIMIT 10"""
-            )
             ms = [int(r["ms"]) for r in durations if r["ms"] is not None]
             latency = Latency(p50_ms=_percentile(ms, 0.5), p95_ms=_percentile(ms, 0.95))
         except Exception:
@@ -85,6 +98,8 @@ async def health() -> JSONResponse:
         sources=sources,
         latency=latency,
     )
+    _cached_body = body
+    _cached_time = now
     return JSONResponse(
         body.model_dump(mode="json"), status_code=503 if db_health.status == "down" else 200
     )

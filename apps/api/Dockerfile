@@ -43,7 +43,7 @@ USER appuser
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8080
 # /health sits at the root (no /api prefix) and answers 503 only when the database is down.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${PORT:-8080}/health" || exit 1
 # Apply migrations, then serve with a single worker to fit within 512MB RAM free-tier limit.
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*' --workers 1 --limit-concurrency 10"]
