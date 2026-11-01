@@ -27,16 +27,36 @@ SELECT id::text AS id, doc_title, plan_year, source_url, page, scenario, crop, t
 FROM ranked ORDER BY score DESC LIMIT $6
 """
 
+SQL_KEYWORD = """
+WITH cand AS (
+  SELECT id, doc_title, plan_year, source_url, page, scenario, crop, text,
+         ts_rank(to_tsvector('simple', text), plainto_tsquery('simple', $4)) AS kw
+  FROM doc_chunks
+  WHERE district_code = $1 AND scenario = ANY($2::text[]) AND (crop IS NULL OR crop ILIKE $3)
+)
+SELECT id::text AS id, doc_title, plan_year, source_url, page, scenario, crop, text,
+       (1.0 / (60 + RANK() OVER (ORDER BY kw DESC))) AS score
+FROM cand ORDER BY score DESC LIMIT $5
+"""
+
 
 async def retrieve(
     district_code: str, scenarios: list[str], crop: str, query: str, k: int = 4
 ) -> list[dict[str, Any]]:
-    vec = await asyncio.get_running_loop().run_in_executor(None, embed_one, query)
-    rows = await db.pool().fetch(SQL, vec, district_code, scenarios, f"%{crop}%", query, k)
-    if not rows:  # still give cited guidance from the district's general sections
-        rows = await db.pool().fetch(
-            SQL, vec, district_code, ["general", *scenarios], f"%{crop}%", query, k
-        )
+    try:
+        vec = await asyncio.get_running_loop().run_in_executor(None, embed_one, query)
+        rows = await db.pool().fetch(SQL, vec, district_code, scenarios, f"%{crop}%", query, k)
+        if not rows:  # still give cited guidance from the district's general sections
+            rows = await db.pool().fetch(
+                SQL, vec, district_code, ["general", *scenarios], f"%{crop}%", query, k
+            )
+    except Exception:
+        # Fall back to PostgreSQL full-text search if embedding fails under memory pressure
+        rows = await db.pool().fetch(SQL_KEYWORD, district_code, scenarios, f"%{crop}%", query, k)
+        if not rows:
+            rows = await db.pool().fetch(
+                SQL_KEYWORD, district_code, ["general", *scenarios], f"%{crop}%", query, k
+            )
     return [dict(r) | {"score": float(r["score"])} for r in rows]
 
 

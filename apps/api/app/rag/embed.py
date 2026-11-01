@@ -16,7 +16,11 @@ from app.config import get_settings
 def _model() -> Any:
     from fastembed import TextEmbedding
 
-    return TextEmbedding(get_settings().embed_model)
+    return TextEmbedding(
+        get_settings().embed_model,
+        threads=1,
+        enable_cpu_mem_arena=False,
+    )
 
 
 def embed(texts: list[str]) -> list[np.ndarray[Any, Any]]:

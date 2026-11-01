@@ -8,6 +8,7 @@ Every node emits trace events (agent_steps rows) streamed to the UI over SSE.
 """
 
 import asyncio
+import gc
 import time
 from datetime import date, timedelta
 from typing import Any, TypedDict
@@ -211,7 +212,14 @@ async def gather(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
                 detail={"source": source, "error": error},
             )
 
-    await asyncio.gather(*(run(g) for g in state["to_run"]))
+    sem = asyncio.Semaphore(2)
+
+    async def bounded_run(g: str) -> None:
+        async with sem:
+            await run(g)
+
+    await asyncio.gather(*(bounded_run(g) for g in state["to_run"]))
+    gc.collect()
     return {"results": results}
 
 
@@ -557,6 +565,7 @@ async def assess(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             ],
         },
     )
+    gc.collect()
     return {"book": book, "risks": risks, "model_version": model_version}
 
 
@@ -671,6 +680,7 @@ async def retrieve(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             ],
         },
     )
+    gc.collect()
     return {"passages": passages}
 
 
@@ -698,6 +708,7 @@ async def draft(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             latency_ms=int((time.perf_counter() - t0) * 1000),
             detail={"message": f"draft {attempt} from {provider}", "actions": len(plan_.actions)},
         )
+        gc.collect()
         return {"draft": plan_, "draft_attempts": attempt}
     except Exception as exc:
         await trace.emit(
@@ -707,6 +718,7 @@ async def draft(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             latency_ms=int((time.perf_counter() - t0) * 1000),
             detail={"check": "error", "reason": str(exc)[:300], "action": "rule_based"},
         )
+        gc.collect()
         return {"draft": None, "draft_attempts": MAX_DRAFTS}
 
 
@@ -752,6 +764,7 @@ async def rule_based(state: AgentState, config: RunnableConfig) -> dict[str, Any
         status="succeeded",
         detail={"message": f"{len(plan_)} actions quoted from the contingency plan"},
     )
+    gc.collect()
     return {
         "plan": plan_,
         "plan_summary": None,
@@ -792,6 +805,7 @@ async def finalize(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             "degraded": degraded,
         },
     )
+    gc.collect()
     return out | {"status": status}
 
 
