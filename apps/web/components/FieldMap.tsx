@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import maplibregl, { type ExpressionSpecification, type GeoJSONSource, type StyleSpecification } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
@@ -47,12 +47,14 @@ interface Props {
   levels: Record<string, Severity>;
   districts: District[];
   selectedId: string | null;
+  /** The polygon being drawn or waiting to be saved. When it becomes null the drawing is wiped. */
+  drawn: GeoJSONPolygon | null;
   target: MapTarget | null;
   onSelect: (id: string) => void;
   onDrawn: (poly: GeoJSONPolygon | null) => void;
 }
 
-export default function FieldMap({ fields, levels, districts, selectedId, target, onSelect, onDrawn }: Props) {
+export default function FieldMap({ fields, levels, districts, selectedId, drawn, target, onSelect, onDrawn }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const draw = useRef<TerraDraw | null>(null);
@@ -161,6 +163,11 @@ export default function FieldMap({ fields, levels, districts, selectedId, target
   useEffect(() => {
     if (target && map.current) map.current.flyTo({ center: [target.lon, target.lat], zoom: target.zoom, duration: 1200 });
   }, [target]);
+
+  useEffect(() => {
+    // A saved or cleared field leaves nothing behind: drop the yellow drawing, keep the registered polygon.
+    if (ready && drawn === null) draw.current?.clear();
+  }, [drawn, ready]);
 
   const startDraw = () => {
     draw.current?.clear();

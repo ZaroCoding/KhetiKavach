@@ -545,11 +545,7 @@ async def assess(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         "assess",
         status="succeeded",
         detail={
-            "message": (
-                f"headline: {top.hazard} {top.probability:.0%} ({top.severity})"
-                if top and top.probability is not None
-                else "no probabilistic risk available"
-            ),
+            "message": _headline_message(top),
             "risks": [
                 {
                     "hazard": x.hazard,
@@ -622,6 +618,17 @@ def _risk_from_forecast(
         window=Window(start=est.window_start, end=est.window_end),
         uncertainty_note=note,
     )
+
+
+def _headline_message(top: Risk | None) -> str:
+    """One-line trace summary. A replayed archived run is a yes/no outcome, not a percentage."""
+    if top is None or top.probability is None:
+        return "no probabilistic risk available"
+    if top.method == "deterministic_replay":
+        value = "YES" if top.probability else "NO"
+    else:
+        value = f"{top.probability:.0%}"
+    return f"headline: {top.hazard} {value} ({top.severity})"
 
 
 def _headline(risks: list[Risk]) -> Risk | None:

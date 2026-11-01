@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { headline, joinSeries, pct } from "@/lib/format";
+import { STRINGS, headline, joinSeries, pct, riskHeading } from "@/lib/format";
 import type { Evidence, Risk } from "@/lib/types";
 
 // Hand-built test inputs (CLAUDE.md rule 1); they never reach app code.
@@ -32,6 +32,14 @@ describe("format helpers", () => {
     const top = headline([testRisk("dry_spell", 0.6, 0.2), testRisk("heavy_rain", 0.3, 1)]);
     expect(top?.hazard).toBe("heavy_rain");
     expect(headline([testRisk("dry_spell", null, 1)])).toBeNull();
+  });
+
+  it("titles the risk section with the horizon the forecast covers, in every language", () => {
+    const replay = { ...testRisk("harvest_rain", 1, 1), horizon_days: 10 };
+    expect(riskHeading(STRINGS.en, [replay])).toBe("Risk for the next 10 days");
+    expect(riskHeading(STRINGS.hi, [replay])).toBe("अगले 10 दिनों का जोखिम");
+    expect(riskHeading(STRINGS.pa, [testRisk("dry_spell", 0.5, 1), replay])).toBe("ਅਗਲੇ 15 ਦਿਨਾਂ ਦਾ ਜੋਖਮ");
+    expect(riskHeading(STRINGS.en, [])).toBe("Risk outlook"); // no risk: no horizon to claim
   });
 
   it("joins evidence series by date", () => {

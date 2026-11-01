@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from app.agent.graph import run_assessment
+from app.agent.graph import _headline_message, run_assessment
 from app.agent.tools import ToolOutput
 from app.agent.trace import Trace
 from app.connectors.base import FetchResult, SourceUnavailable
@@ -18,6 +18,7 @@ from app.connectors.imd import Climatology
 from app.connectors.llm import DraftAction, DraftPlan
 from app.connectors.open_meteo import Antecedent
 from app.risk.engine import MemberForecast
+from app.schemas import Risk, Threshold
 
 TODAY = datetime.now(UTC).date()
 TEST_FIELD = {
@@ -175,6 +176,29 @@ async def test_fallback_then_verifier_rejects_then_passes() -> None:
     assert set(done) == {"status", "result_url", "duration_ms", "degraded"}
     assert isinstance(done["duration_ms"], int) and done["duration_ms"] >= 0
     assert done["degraded"] is True and done["status"] == "completed_degraded"
+
+
+def _test_risk(probability: float | None, method: str) -> Risk:
+    return Risk(
+        hazard="harvest_rain",
+        probability=probability,
+        severity="severe",
+        threshold=Threshold(description="test", value=15.6, unit="mm/day"),
+        horizon_days=10,
+        crop_stage="ripening",
+        stage_weight=1.0,
+        method=method,  # type: ignore[arg-type]
+    )
+
+
+def test_trace_headline_says_yes_or_no_for_a_replayed_run_and_a_percentage_otherwise() -> None:
+    assert _headline_message(_test_risk(1.0, "deterministic_replay")) == (
+        "headline: harvest_rain YES (severe)"
+    )
+    assert _headline_message(_test_risk(0.0, "deterministic_replay")).endswith("NO (severe)")
+    assert _headline_message(_test_risk(0.333, "ensemble")) == "headline: harvest_rain 33% (severe)"
+    assert _headline_message(_test_risk(None, "ensemble")) == "no probabilistic risk available"
+    assert _headline_message(None) == "no probabilistic risk available"
 
 
 async def test_failed_run_still_ends_with_error_then_done_with_duration() -> None:

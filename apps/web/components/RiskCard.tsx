@@ -7,7 +7,7 @@ import { BentoGrid, type BentoSlotConfig } from "@/components/layouts/bento-grid
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { HAZARD_LABEL, METHOD_NOTE, SEVERITY_CLASS, STRINGS, pct, when } from "@/lib/format";
+import { HAZARD_LABEL, METHOD_NOTE, SEVERITY_CLASS, STRINGS, pct, riskHeading, when } from "@/lib/format";
 import type { Assessment, Evidence, Risk } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -233,7 +233,7 @@ export default function RiskCard({ a, s }: { a: Assessment; s: Strings }) {
       </div>
     ),
     "no-risk": a.risks.length === 0 && (
-      <Section title={s.risks}>
+      <Section title={riskHeading(s, a.risks)}>
         <p className="text-sm text-soil-500">No risk could be computed: the forecast sources were unavailable. See the trace.</p>
       </Section>
     ),
@@ -335,7 +335,7 @@ export default function RiskCard({ a, s }: { a: Assessment; s: Strings }) {
 
   return (
     <div className="space-y-2">
-      <h3 className={SECTION}>{s.risks}</h3>
+      <h3 className={SECTION}>{riskHeading(s, a.risks)}</h3>
       <BentoGrid slots={slots}>{content}</BentoGrid>
     </div>
   );

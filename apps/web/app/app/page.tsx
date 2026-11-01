@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Gauge, History, MapPinned, PanelBottomOpen, ShieldCheck, Sprout } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -183,6 +183,7 @@ export default function Workspace() {
       levels={levels}
       districts={districts.status === "success" ? districts.data : []}
       selectedId={selected}
+      drawn={polygon}
       target={target}
       onSelect={setSelected}
       onDrawn={setPolygon}

@@ -1,4 +1,4 @@
-import { FileCheck, History, Percent, Satellite, Send, Sprout, Workflow } from "lucide-react";
+﻿import { FileCheck, History, Percent, Satellite, Send, Sprout, Workflow } from "lucide-react";
 import Link from "next/link";
 
 import LiveStatus from "@/components/LiveStatus";
@@ -89,7 +89,7 @@ export default function Landing() {
         <HeroSection
           badge="FORGE 2026"
           heading="Field-level early warning for dry spells and damaging rain"
-          description="India has plenty of weather data. What farmers lack is a forecast for one field, this week, and the action that field needs. KhetKavach gives the probability of a dry spell, heavy rain or rain at harvest over the next 15 days, then writes a dated action plan quoted from the district's official ICAR-CRIDA contingency plan."
+          description="India has plenty of weather data. What farmers lack is a forecast for one field, this week, and the action that field needs. KhetKavach gives the probability of a dry spell, heavy rain or rain at harvest over the next two weeks, then writes a dated action plan quoted from the district's official ICAR-CRIDA contingency plan."
           primaryCTA={{ label: "Open the app", href: "/app" }}
           secondaryCTA={{ label: "View on GitHub", href: GITHUB, external: true }}
         >

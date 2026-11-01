@@ -31,10 +31,20 @@ async def register_sensor(args: argparse.Namespace) -> None:
 
 
 async def prewarm(args: argparse.Namespace) -> None:
-    """Fill the cache with real responses for every registered field before judging."""
+    """Fill the cache with real responses for every registered field before judging.
+
+    POST /api/assessments is limited to 10 a minute per client (ruling B-22); when the API answers
+    429 this waits for the Retry-After it names, then tries that field again.
+    """
     async with httpx.AsyncClient(base_url=args.base, timeout=60) as client:
         for field in (await client.get("/api/fields")).json():
-            r = await client.post("/api/assessments", json={"field_id": field["id"]})
+            for _ in range(3):
+                r = await client.post("/api/assessments", json={"field_id": field["id"]})
+                if r.status_code != 429:
+                    break
+                wait = int(r.headers.get("retry-after", "10"))
+                print(f"rate limited; waiting {wait} s")
+                await asyncio.sleep(wait)
             print(field.get("name") or field["short_code"], r.status_code, r.json())
 
 

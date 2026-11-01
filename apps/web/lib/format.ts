@@ -29,6 +29,13 @@ export const SEVERITY_CLASS: Record<Severity, string> = {
   unknown: "bg-muted text-muted-foreground",
 };
 
+/** "Risk for the next N days" with the horizon the forecast really covers (14 live, 10 for a replay). */
+export function riskHeading(strings: Record<string, string>, risks: Risk[]): string {
+  if (risks.length === 0) return strings.risksNone;
+  const days = Math.max(...risks.map((r) => r.horizon_days));
+  return strings.risks.replace("{days}", String(days));
+}
+
 /** The headline risk: highest probability x stage weight. */
 export function headline(risks: Risk[]): Risk | null {
   const scored = risks.filter((r) => r.probability !== null);
@@ -59,7 +66,8 @@ export function joinSeries(
 export const STRINGS: Record<Language, Record<string, string>> = {
   en: {
     tagline: "Field-level early warning for dry spells and damaging rain",
-    risks: "Risk for the next 15 days",
+    risks: "Risk for the next {days} days",
+    risksNone: "Risk outlook",
     plan: "Action plan",
     evidence: "Evidence",
     sources: "Data provenance",
@@ -70,7 +78,8 @@ export const STRINGS: Record<Language, Record<string, string>> = {
   },
   hi: {
     tagline: "सूखे और नुकसानदेह बारिश की खेत-स्तर पर अग्रिम चेतावनी",
-    risks: "अगले 15 दिनों का जोखिम",
+    risks: "अगले {days} दिनों का जोखिम",
+    risksNone: "जोखिम का पूर्वानुमान",
     plan: "कार्य योजना",
     evidence: "प्रमाण",
     sources: "डेटा स्रोत",
@@ -81,7 +90,8 @@ export const STRINGS: Record<Language, Record<string, string>> = {
   },
   pa: {
     tagline: "ਸੋਕੇ ਅਤੇ ਨੁਕਸਾਨਦੇਹ ਮੀਂਹ ਦੀ ਖੇਤ-ਪੱਧਰ ਅਗਾਊਂ ਚੇਤਾਵਨੀ",
-    risks: "ਅਗਲੇ 15 ਦਿਨਾਂ ਦਾ ਜੋਖਮ",
+    risks: "ਅਗਲੇ {days} ਦਿਨਾਂ ਦਾ ਜੋਖਮ",
+    risksNone: "ਜੋਖਮ ਦਾ ਅਨੁਮਾਨ",
     plan: "ਕਾਰਜ ਯੋਜਨਾ",
     evidence: "ਸਬੂਤ",
     sources: "ਡਾਟਾ ਸਰੋਤ",
