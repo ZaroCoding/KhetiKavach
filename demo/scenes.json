@@ -1,0 +1,15 @@
+{
+  "_note": "Scene table used until demo/script.md exists. Expanded from the 7-step 'Demo script (5 minutes)' in docs/ANTIGRAVITY_PROMPTS.md. Edit seconds or titles here and re-run demo/run-all.js.",
+  "scenes": [
+    { "n": 1,  "seconds": 12, "kind": "card", "title": "FORGE 2026" },
+    { "n": 2,  "seconds": 20, "kind": "app",  "title": "From weather data to one field" },
+    { "n": 3,  "seconds": 35, "kind": "app",  "title": "Register one real field" },
+    { "n": 4,  "seconds": 40, "kind": "app",  "title": "AI agent working live" },
+    { "n": 5,  "seconds": 30, "kind": "app",  "title": "Probabilities with their uncertainty" },
+    { "n": 6,  "seconds": 30, "kind": "app",  "title": "Cited plan in the farmer's language" },
+    { "n": 7,  "seconds": 55, "kind": "app",  "title": "Time Machine: no hindsight" },
+    { "n": 8,  "seconds": 45, "kind": "app",  "title": "Failures handled in the open" },
+    { "n": 9,  "seconds": 15, "kind": "card", "title": "Alert for the farmer" },
+    { "n": 10, "seconds": 13, "kind": "card", "title": "How it is built" }
+  ]
+}

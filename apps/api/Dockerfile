@@ -4,7 +4,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    FASTEMBED_CACHE_PATH=/opt/fastembed
+    FASTEMBED_CACHE_PATH=/opt/fastembed \
+    MALLOC_TRIM_THRESHOLD_=100000 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    VECLIB_MAXIMUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1
 
 # GDAL / GEOS / PROJ for rasterio, shapely and pyproj
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -39,5 +45,5 @@ EXPOSE 8080
 # /health sits at the root (no /api prefix) and answers 503 only when the database is down.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${PORT:-8080}/health" || exit 1
-# Apply migrations, then serve. PORT is set by Cloud Run / Render.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*'"]
+# Apply migrations, then serve with a single worker to fit within 512MB RAM free-tier limit.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*' --workers 1 --limit-concurrency 10"]

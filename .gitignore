@@ -32,3 +32,12 @@ apps/api/data/
 
 # local-only material (screenshots are regenerated into docs/img)
 screenshots/
+
+# demo recording outputs (the scripts in demo/ stay tracked)
+demo/*.mp4
+demo/clips/
+demo/scenes/
+demo/frames/
+demo/cards/
+demo/alert.json
+demo/values.md

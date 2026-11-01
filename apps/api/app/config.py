@@ -49,7 +49,14 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        # Strip trailing slashes so origins match RFC 6454 Origin headers.
+        origins: list[str] = []
+        for o in self.cors_origins.split(","):
+            val = o.strip()
+            if not val:
+                continue
+            origins.append(val.rstrip("/") if val != "/" else "/")
+        return origins
 
 
 @lru_cache

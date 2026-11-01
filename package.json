@@ -1,0 +1,9 @@
+{
+  "name": "khetikavach-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "cd apps/web && pnpm install && pnpm build",
+    "deploy": "wrangler deploy"
+  }
+}

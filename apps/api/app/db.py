@@ -56,7 +56,7 @@ async def init_pool() -> None:
         return
     try:
         _pool = await asyncpg.create_pool(
-            _dsn(), min_size=1, max_size=10, init=_init_conn, command_timeout=30, timeout=5
+            _dsn(), min_size=1, max_size=3, init=_init_conn, command_timeout=30, timeout=5
         )
     except Exception as exc:  # database down: keep serving /health
         log.warning("database unavailable at start-up: %s", exc)
