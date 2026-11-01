@@ -74,11 +74,16 @@ flowchart TD
 
 ## Components
 
-**Next.js frontend (Vercel).** The only user-facing surface. Lets an agronomist draw a field
-polygon (MapLibre + Terra Draw) or search a village, enter crop and sowing date, start an
-assessment, and watch the agent's trace stream live over SSE. Renders the risk card (Recharts
-evidence charts, plan with citations, a provenance panel listing every source and fetch time) and
-Hindi/regional-language output. It talks only to our API and never holds an API key.
+**Next.js frontend (Vercel).** The only user-facing surface, in two routes. `/` is a landing page
+whose live-status block reads `GET /health` and `GET /api/districts` from the browser and says
+"unavailable" when the API cannot answer. `/app` is the workspace: a dashboard shell with a
+sidebar (Fields, Assess, Time Machine, Admin), a resizable split between the map plus agent trace
+and the panels plus results, and a bottom sheet for the panels on a phone. An agronomist draws a
+field polygon (MapLibre + Terra Draw) or searches a village, enters crop and sowing date, starts an
+assessment, and watches the agent's trace stream live over SSE. The risk card is a bento grid of
+risk tiles, Recharts evidence charts, the cited plan and a provenance table listing every source,
+status and fetch time, in English, Hindi or Punjabi. It talks only to our API (and displays Esri
+map tiles) and never holds an API key.
 
 **Telegram.** Delivery channel for alerts to agronomists and farmers. A bot webhook links a chat
 to a field via `/start <field code>`; the agent posts an alert when risk crosses a threshold.
@@ -132,7 +137,11 @@ and triggers alerts on threshold crossings.
 timeout (8 s weather, 20 s imagery), one retry with backoff, a named fallback source, then the
 last cached real value, backed by a read-through `api_cache`. Every returned value carries
 `source`, `fetched_at`, and a status (live/cached/archived/unavailable). If nothing real exists
-the status is "unavailable", never a placeholder.
+the status is "unavailable", never a placeholder. An admin kill switch makes a source skip its
+upstream call and serve its last real cached response (flagged `cached`, with a note) or report
+"unavailable" so the agent falls back. Slow SDK reads, such as the Planetary Computer history, are
+cached window by window under a time budget, so a retry resumes and a timeout costs history years,
+not the whole answer.
 
 **Postgres + PostGIS + pgvector.** The only datastore (Neon). Holds field polygons, the response
 cache, observations, pre-loaded IMD daily rainfall, assessments, the agent step trace, RAG
