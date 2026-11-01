@@ -17,19 +17,18 @@ const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > -1 ? process.argv[i + 1] : fallback;
 };
-const BASE = arg("base", "http://localhost:3000");
-const API = arg("api", "http://localhost:8000");
+const BASE = arg("base", "http://localhost:3100");
+const API = arg("api", "http://localhost:8010");
 const CLIPS = path.join(__dirname, "clips");
 const SCENES = Object.fromEntries(
   JSON.parse(fs.readFileSync(path.join(__dirname, "scenes.json"), "utf8")).scenes.map((s) => [s.n, s]),
 );
-const VIEW = { width: 1440, height: 810 };
 const VIDEO = { width: 1920, height: 1080 };
 const MAX_SPEED = 3;
 const RUN_TIMEOUT = 5 * 60 * 1000;
 const KILL_SOURCE = "open_meteo_ensemble";
 
-const LIVE_FIELD = "Baddowal wheat field";
+const LIVE_FIELD = "Alamgir wheat field";
 const MAR_FIELD = "Ludhiana wheat, sown Nov 2025";
 const AUG_FIELD = "Dharwad soybean, sown Jun 2023";
 const KILL_FIELD = "Ludhiana wheat, no cached data";
@@ -96,7 +95,7 @@ const sleep = (ms) => page.waitForTimeout(ms);
 
 async function moveTo(x, y) {
   const dist = Math.hypot(x - mouse.x, y - mouse.y);
-  const steps = Math.max(10, Math.min(28, Math.round(dist / 28)));
+  const steps = Math.max(8, Math.min(18, Math.round(dist / 40)));
   const from = { ...mouse };
   for (let i = 1; i <= steps; i += 1) {
     const t = i / steps;
@@ -119,7 +118,7 @@ async function click(locator) {
   await page.mouse.down();
   await sleep(70);
   await page.mouse.up();
-  await sleep(250);
+  await sleep(150);
 }
 
 async function typeHuman(text, delay = 75) {
@@ -129,6 +128,7 @@ async function typeHuman(text, delay = 75) {
 async function ring(locator) {
   const b = await locator.boundingBox();
   if (!b) return;
+  await moveTo(Math.min(1400, b.x + b.width + 26), b.y + b.height / 2); // the pointer rests beside the element, not on it
   await page.evaluate((r) => {
     const el = document.getElementById("kk-ring");
     Object.assign(el.style, { left: `${r.x - 6}px`, top: `${r.y - 6}px`, width: `${r.width + 12}px`, height: `${r.height + 12}px`, opacity: 1 });
@@ -316,14 +316,14 @@ async function scene3() {
   await district.selectOption("PB_LUDHIANA");
   await sleep(1700);
   await click(page.getByLabel("Search a village"));
-  await typeHuman("Baddowal");
+  await typeHuman("Alamgir");
   await click(page.getByRole("button", { name: "Find", exact: true }));
-  const place = page.locator("button.text-sky-600").filter({ hasText: /Baddowal/i }).first();
+  const place = page.locator("button.text-sky-600").filter({ hasText: /Alamgir.*Ludhiana/i }).first();
   await place.waitFor({ timeout: 20000 });
   await sleep(600);
   await click(place);
   await sleep(2600); // the map flies in and real satellite tiles load
-  await drawOnMap([[-60, -40], [65, -46], [72, 38], [-54, 44]]);
+  await drawOnMap([[150, -192], [216, -194], [218, -130], [151, -128]]); // a real parcel beside the village
   await page.getByText("✓ Polygon drawn").waitFor({ timeout: 10000 });
   await sleep(600);
   await click(page.getByLabel("Field name"));
@@ -479,15 +479,16 @@ async function setKill(key, disabled) {
 async function scene8(key) {
   // Off camera: back to live mode, and a Ludhiana field with no cached weather so the
   // chain really has to fall back. Coordinates shift each run to keep the cache empty.
-  await page.getByRole("button", { name: "today (live)" }).click();
-  await panel("Fields").click();
-  await page.locator("div.overflow-y-auto").last().evaluate((el) => el.scrollTo({ top: 0 }));
-  await sleep(300);
+  await page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+  await page.evaluate(installOverlay);
+  await page.mouse.move(mouse.x, mouse.y);
+  await fieldButton(KILL_FIELD).waitFor({ timeout: 60000 });
+  await sleep(800);
   const sc = new Scene(8);
   await sc.start();
   await sleep(300);
   await click(fieldButton(KILL_FIELD));
-  await sleep(1400);
+  await sleep(1000);
   await drawOnMap([[-180, -60], [-60, 40], [-60, -60], [-180, 40]]);
   await page.getByText("✓ Polygon drawn").waitFor({ timeout: 10000 });
   await page.getByLabel("District").selectOption("PB_LUDHIANA");
@@ -498,7 +499,7 @@ async function scene8(key) {
   await alert.waitFor({ timeout: 15000 });
   run.rejectionReason = await alert.textContent();
   await spotlight(alert, { zoom: 1.6 });
-  await sleep(3200);
+  await sleep(2600);
   await unring();
   await unzoom();
   await click(page.getByRole("button", { name: "Clear", exact: true }));
@@ -509,13 +510,11 @@ async function scene8(key) {
   await click(page.getByRole("button", { name: "Load", exact: true }));
   const chip = page.getByRole("button", { name: new RegExp(`${KILL_SOURCE}: `) });
   await chip.waitFor({ timeout: 30000 });
-  await spotlight(chip, { zoom: 1, center: false });
-  await sleep(900);
+  await sleep(500);
   await click(chip);
   await page.getByRole("button", { name: `${KILL_SOURCE}: OFF` }).waitFor({ timeout: 15000 });
   run.killSwitch = { source: KILL_SOURCE, disabled: true, at: new Date().toISOString() };
-  await sleep(900);
-  await unring();
+  await sleep(700);
   await click(panel("Assess"));
   await sleep(300);
   try {
@@ -582,8 +581,9 @@ async function main() {
   await preflight();
   await createKillField();
   saveRun();
-  const browser = await chromium.launch({ slowMo: 12 });
-  const context = await browser.newContext({ viewport: VIEW, deviceScaleFactor: VIDEO.width / VIEW.width, locale: "en-IN", timezoneId: "Asia/Kolkata" });
+  // A browser-level scale gives a 1440x810 layout painted at a true 1920x1080, so the UI stays legible.
+  const browser = await chromium.launch({ channel: "chromium", slowMo: 12, args: ["--force-device-scale-factor=1.3333333", "--window-size=1454,903"] });
+  const context = await browser.newContext({ viewport: null, locale: "en-IN", timezoneId: "Asia/Kolkata" });
   page = await context.newPage();
   const noise = /GL Driver Message|GPU stall|Download the React DevTools/;
   page.on("console", (m) => { if (m.type() === "error" && !noise.test(m.text())) run.problems.push(`scene ${current?.n ?? "-"} console: ${m.text().slice(0, 200)}`); });

@@ -2,8 +2,9 @@
   "name": "khetikavach-workspace",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@12.16.1",
   "scripts": {
-    "build": "cd apps/web && pnpm install && pnpm build",
+    "build": "cd apps/web && npx pnpm install && npx pnpm build",
     "deploy": "wrangler deploy"
   }
 }
