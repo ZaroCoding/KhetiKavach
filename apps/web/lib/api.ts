@@ -92,7 +92,13 @@ export async function fetchHealth(fetchImpl: typeof fetch = fetch): Promise<Heal
   try {
     response = await fetchImpl(`${base}/health`, { cache: "no-store" });
   } catch (err) {
-    handleFetchError(err, base, "/health");
+    // Retry once after 1s to absorb serverless cold-start latency
+    try {
+      await new Promise((r) => setTimeout(r, 1000));
+      response = await fetchImpl(`${base}/health`, { cache: "no-store" });
+    } catch {
+      handleFetchError(err, base, "/health");
+    }
   }
   if (!response.ok) {
     throw new ApiError(`API /health returned HTTP ${response.status}`, response.status);
