@@ -32,7 +32,9 @@ export function apiBaseUrl(): string {
       // ignore storage access errors
     }
   }
-  const url = process.env.NEXT_PUBLIC_API_URL;
+  const url =
+    process.env.NEXT_PUBLIC_API_URL ||
+    (typeof window !== "undefined" ? "https://khetkavach-api-x90n.onrender.com" : "");
   if (!url) {
     throw new ApiError("NEXT_PUBLIC_API_URL is not set");
   }
