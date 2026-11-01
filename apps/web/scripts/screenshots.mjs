@@ -173,6 +173,9 @@ await ctx.close();
   ).newPage();
   watch(mobile, "mobile");
   await mobile.goto(base + "/app", { waitUntil: "networkidle" });
+  await mobile.getByRole("button", { name: "Fields", exact: true }).waitFor();
+  await mobile.waitForTimeout(2500);
+  await shot(mobile, "08-app-mobile.png"); // map, trace and the floating panel button
   await mobile.getByRole("button", { name: "Fields", exact: true }).click(); // floating panel button
   await mobile.getByRole("dialog").getByRole("button", { name: new RegExp(LIVE_FIELD) }).click();
   await mobile.keyboard.press("Escape"); // close the Fields sheet
@@ -185,8 +188,9 @@ await ctx.close();
   await mobile.waitForTimeout(2500);
   console.log(`  mobile assessment done in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   await mobile.locator('[data-slot="risk-dry_spell"]').first().scrollIntoViewIfNeeded();
+  await mobile.mouse.move(1, 1); // no chart tooltip left under the last pointer position
   await mobile.waitForTimeout(800);
-  await shot(mobile, "08-app-mobile.png");
+  await shot(mobile, "09-app-mobile-risk.png");
   await mobile.context().close();
 }
 
