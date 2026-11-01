@@ -4,6 +4,8 @@ import localFont from "next/font/local";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 
+import { Toaster } from "@/components/ui/sonner";
+
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
   variable: "--font-sans",
@@ -29,6 +31,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
         {children}
+        <Toaster />
       </body>
     </html>
   );

@@ -6,16 +6,11 @@ import type {
   EventName,
   Field,
   GeoJSONPolygon,
+  Health,
   Language,
   Place,
   TraceEvent,
 } from "@/lib/types";
-
-export type Health = {
-  status: string;
-  version: string;
-  db: { status: string; latency_ms: number | null } | string;
-};
 
 export class ApiError extends Error {
   constructor(

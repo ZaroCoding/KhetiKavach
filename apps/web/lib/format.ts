@@ -3,6 +3,10 @@ import type { Evidence, Language, Risk, Severity } from "@/lib/types";
 export const pct = (p: number | null | undefined): string =>
   p === null || p === undefined ? "—" : `${Math.round(p * 100)}%`;
 
+/** Local date and time of an ISO timestamp, for provenance labels. */
+export const when = (iso: string): string =>
+  new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
 export const HAZARD_LABEL: Record<Risk["hazard"], string> = {
   dry_spell: "Dry spell",
   heavy_rain: "Heavy rain",

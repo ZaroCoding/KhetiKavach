@@ -177,3 +177,20 @@ export interface AdminSource {
 export interface ApiErrorBody {
   error: { code: string; message: string; details: unknown };
 }
+
+export interface SourceHealth {
+  status: "ok" | "degraded" | "down" | "unknown";
+  last_latency_ms: number | null;
+  last_ok_at: string | null;
+  disabled: boolean;
+}
+
+/** GET /health (no /api prefix). */
+export interface Health {
+  status: "ok" | "degraded";
+  version: string;
+  model_version: string | null;
+  db: { status: "ok" | "down"; latency_ms: number | null };
+  sources: Partial<Record<SourceName, SourceHealth>>;
+  latency: { p50_ms: number | null; p95_ms: number | null };
+}

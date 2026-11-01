@@ -1,4 +1,4 @@
-# secrets
+﻿# secrets
 .env
 .env.*
 !.env.example
@@ -30,4 +30,3 @@ apps/api/data/
 
 # local-only material (screenshots are regenerated into docs/img)
 screenshots/
-layout-component-library/

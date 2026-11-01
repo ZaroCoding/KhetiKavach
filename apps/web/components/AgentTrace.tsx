@@ -41,7 +41,7 @@ export function describe(e: TraceEvent): string {
     case "tool_result":
       return step.status === "failed"
         ? `${text(step.tool)} failed: ${text(d.error)}`
-        : `${text(step.tool)} → ${summarise(d.summary)}${d.freshness === "cached" ? " (cached)" : ""}`;
+        : `${text(step.tool)} → ${summarise(d.summary)}${d.freshness === "cached" ? " (cached)" : ""}${d.note ? `: ${text(d.note)}` : ""}`;
     case "gate_failed":
       return `${text(step.tool ?? e.node)} [${text(d.check)}]: ${text(d.reason)}`;
     case "fallback_used":
