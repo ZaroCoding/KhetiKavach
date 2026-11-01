@@ -238,6 +238,8 @@ class AssessmentOut(BaseModel):
     replay_basis: Literal["archived_forecast", "observed_rain_model"] | None = None
     sources: list[Source] = []
     data_freshness: DataFreshness
+    crop_status: Literal["pre_sowing", "in_season", "past_maturity"]
+    days_after_sowing: int
 
 
 # ------------------------------------------------------------------ ops

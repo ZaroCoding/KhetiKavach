@@ -19,6 +19,7 @@ from app.agent.persist import reap_stale_runs
 from app.agent.tools import today_utc
 from app.errors import ApiError, validation_error
 from app.ratelimit import rate_limit
+from app.risk.crops import stage_on
 from app.schemas import AssessmentAccepted, AssessmentCreate, AssessmentOut
 
 router = APIRouter(prefix="/api")
@@ -112,10 +113,16 @@ EMPTY_FRESHNESS: dict[str, Any] = {
 @router.get("/assessments/{aid}", response_model=AssessmentOut)
 async def get_one(aid: str) -> AssessmentOut:
     aid = _uuid_or_404(aid, "assessment")
-    r = await db.pool().fetchrow("SELECT * FROM assessments WHERE id = $1::uuid", aid)
+    r = await db.pool().fetchrow(
+        """SELECT a.*, f.crop, f.sowing_date
+           FROM assessments a JOIN fields f ON f.id = a.field_id
+           WHERE a.id = $1::uuid""",
+        aid,
+    )
     if not r:
         raise ApiError(404, "assessment not found")
     done = r["status"] in ("completed", "completed_degraded", "failed")
+    crop_day = stage_on(r["crop"], r["sowing_date"], r["as_of"] or r["created_at"].date())
     return AssessmentOut(
         id=str(r["id"]),
         field_id=str(r["field_id"]),
@@ -134,6 +141,8 @@ async def get_one(aid: str) -> AssessmentOut:
         replay_basis=r["replay_basis"],
         sources=r["sources"] or [],
         data_freshness=r["data_freshness"] or EMPTY_FRESHNESS,
+        crop_status=crop_day.status,
+        days_after_sowing=crop_day.das,
     )
 
 

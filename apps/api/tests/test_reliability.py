@@ -435,3 +435,55 @@ def test_unhandled_error_keeps_cors_headers_so_the_browser_can_read_it() -> None
 def test_start_up_reaps_without_a_database() -> None:
     with TestClient(app) as client:
         assert client.get("/docs").status_code == 200
+
+
+# ------------------------------------------------------------------ why a card has no risks
+class OneRow:
+    def __init__(self, row: dict[str, Any]) -> None:
+        self.row = row
+
+    async def fetchrow(self, *_: Any) -> dict[str, Any]:
+        return self.row
+
+
+def _assessment_row(as_of: date | None, sowing: date) -> dict[str, Any]:
+    return {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "field_id": "00000000-0000-4000-8000-000000000002",
+        "status": "completed_degraded",
+        "as_of": as_of,
+        "language": "en",
+        "model_version": None,
+        "created_at": datetime(2026, 11, 1, 20, 0, tzinfo=UTC),
+        "completed_at": None,
+        "risks": [],
+        "evidence": [],
+        "plan": [],
+        "plan_summary": None,
+        "plan_generator": "none",
+        "replay_basis": None,
+        "sources": [],
+        "data_freshness": None,
+        "crop": "soybean",
+        "sowing_date": sowing,
+    }
+
+
+@pytest.mark.parametrize(
+    ("as_of", "sowing", "status", "days"),
+    [
+        (None, date(2026, 7, 1), "past_maturity", 123),  # live: counted to the day it was created
+        (date(2026, 8, 1), date(2026, 7, 1), "in_season", 31),  # replay: counted to as_of
+        (None, date(2026, 12, 1), "pre_sowing", -30),
+    ],
+)
+async def test_assessment_reports_where_the_crop_is_in_its_season(
+    monkeypatch: pytest.MonkeyPatch, as_of: date | None, sowing: date, status: str, days: int
+) -> None:
+    from app.routers.assessments import get_one
+
+    pool = OneRow(_assessment_row(as_of, sowing))
+    monkeypatch.setattr(db, "pool", lambda: pool)
+    out = await get_one("00000000-0000-4000-8000-000000000001")
+    assert out.crop_status == status
+    assert out.days_after_sowing == days

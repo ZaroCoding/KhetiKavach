@@ -46,9 +46,43 @@ function isErrorBody(body: unknown): body is ApiErrorBody {
 }
 
 const ATTEMPT_TIMEOUT_MS = 20_000;
-/** Waits between attempts, about 30 s in all: long enough for the API to restart after a redeploy. */
-const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
+/** Waits between attempts, 90 s in all: a sleeping free-tier host can take about a minute to wake. */
+const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000, 15_000, 15_000];
+/** Stops a host that hangs on every attempt from adding each attempt's own timeout on top. */
+const RETRY_BUDGET_MS = 120_000;
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
+/** A request this slow gets the on-screen note that the server may be waking up. */
+const SLOW_NOTICE_MS = 6_000;
+
+let slowRequests = 0;
+const slowListeners = new Set<() => void>();
+
+function setSlowRequests(count: number): void {
+  slowRequests = count;
+  slowListeners.forEach((listener) => listener());
+}
+
+/** Is a request taking long enough to tell the reader? For useSyncExternalStore. */
+export const isApiSlow = (): boolean => slowRequests > 0;
+
+export function subscribeApiSlow(listener: () => void): () => void {
+  slowListeners.add(listener);
+  return () => slowListeners.delete(listener);
+}
+
+async function withSlowNotice<T>(work: () => Promise<T>): Promise<T> {
+  let noticed = false;
+  const timer = setTimeout(() => {
+    noticed = true;
+    setSlowRequests(slowRequests + 1);
+  }, SLOW_NOTICE_MS);
+  try {
+    return await work();
+  } finally {
+    clearTimeout(timer);
+    if (noticed) setSlowRequests(slowRequests - 1);
+  }
+}
 
 type Sleep = (ms: number) => Promise<void>;
 const sleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -73,18 +107,20 @@ async function getWithRetry(
   fetchImpl: typeof fetch,
   wait: Sleep,
 ): Promise<Response> {
-  for (let attempt = 0; ; attempt++) {
-    let failure: unknown;
-    try {
-      const response = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS) });
-      if (!RETRYABLE_STATUS.has(response.status) || attempt >= RETRY_DELAYS_MS.length) return response;
-    } catch (err) {
-      if (!isNetworkFailure(err)) throw err;
-      failure = err;
+  const started = Date.now();
+  return withSlowNotice(async () => {
+    for (let attempt = 0; ; attempt++) {
+      const lastTry = attempt >= RETRY_DELAYS_MS.length || Date.now() - started > RETRY_BUDGET_MS;
+      try {
+        const response = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS) });
+        if (!RETRYABLE_STATUS.has(response.status) || lastTry) return response;
+      } catch (err) {
+        if (!isNetworkFailure(err)) throw err;
+        if (lastTry) throw unreachable();
+      }
+      await wait(RETRY_DELAYS_MS[attempt]);
     }
-    if (attempt >= RETRY_DELAYS_MS.length) throw failure instanceof Error ? unreachable() : failure;
-    await wait(RETRY_DELAYS_MS[attempt]);
-  }
+  });
 }
 
 async function send(
@@ -96,7 +132,7 @@ async function send(
   const method = (init.method ?? "GET").toUpperCase();
   if (method === "GET") return getWithRetry(url, init, fetchImpl, wait);
   try {
-    return await fetchImpl(url, init);
+    return await withSlowNotice(() => fetchImpl(url, init));
   } catch (err) {
     if (!isNetworkFailure(err)) throw err;
   }

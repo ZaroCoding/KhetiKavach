@@ -141,6 +141,8 @@ export interface Assessment {
   replay_basis: "archived_forecast" | "observed_rain_model" | null;
   sources: Source[];
   data_freshness: DataFreshness;
+  crop_status: "pre_sowing" | "in_season" | "past_maturity";
+  days_after_sowing: number;
 }
 
 export type EventName =

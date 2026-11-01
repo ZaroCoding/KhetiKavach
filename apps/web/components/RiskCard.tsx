@@ -7,7 +7,7 @@ import { BentoGrid, type BentoSlotConfig } from "@/components/layouts/bento-grid
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { HAZARD_LABEL, METHOD_NOTE, SEVERITY_CLASS, STRINGS, pct, riskHeading, when } from "@/lib/format";
+import { HAZARD_LABEL, METHOD_NOTE, SEVERITY_CLASS, STRINGS, pct, riskHeading, when, noRiskReason } from "@/lib/format";
 import type { Assessment, Evidence, Risk } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -234,7 +234,7 @@ export default function RiskCard({ a, s }: { a: Assessment; s: Strings }) {
     ),
     "no-risk": a.risks.length === 0 && (
       <Section title={riskHeading(s, a.risks)}>
-        <p className="text-sm text-soil-500">No risk could be computed: the forecast sources were unavailable. See the trace.</p>
+        <p className="text-sm text-soil-500">{noRiskReason(a)}</p>
       </Section>
     ),
     spread: spread && (
@@ -255,7 +255,11 @@ export default function RiskCard({ a, s }: { a: Assessment; s: Strings }) {
     plan: (
       <Section title={s.plan}>
         {a.plan.length === 0 ? (
-          <p className="text-sm text-soil-500">No cited actions: no contingency-plan passages matched (or none are indexed for this district).</p>
+          <p className="text-sm text-soil-500">
+            {a.risks.length === 0
+              ? "No actions: there is no risk to act on."
+              : "No cited actions: no contingency-plan passages matched (or none are indexed for this district)."}
+          </p>
         ) : (
           <>
             {a.plan_summary && <p className="mb-2 text-sm">{a.plan_summary}</p>}

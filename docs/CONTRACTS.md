@@ -235,10 +235,16 @@ Response **200**:
   "plan_generator": "<llm | rule_based | none | null>",
   "replay_basis": "<archived_forecast | observed_rain_model | null>",
   "sources": ["<Source>"],
-  "data_freshness": "<data_freshness>"
+  "data_freshness": "<data_freshness>",
+  "crop_status": "<pre_sowing | in_season | past_maturity>",
+  "days_after_sowing": "<integer, negative before sowing>"
 }
 ```
 - `mode` is `replay` iff `as_of` is not null.
+- `crop_status` and `days_after_sowing` are worked out from the field's own crop and sowing date, on
+  `as_of` or, for a live run, the UTC date it was created. They are not an external reading, so they
+  carry no `source`. They let a client say why `risks` is empty: outside the season, the crop has no
+  stage inside the forecast window, which is not a data outage.
 - **While `queued` or `running`: 200 with `risks`, `evidence`, `plan`, `sources` all `[]`,
   `completed_at: null`, and `data_freshness` = `{ "oldest_fetched_at": null,
   "newest_fetched_at": null, "per_source": {} }`. Never 404.**

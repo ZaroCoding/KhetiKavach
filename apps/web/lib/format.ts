@@ -1,4 +1,4 @@
-import type { Evidence, Language, Risk, Severity } from "@/lib/types";
+import type { Assessment, Evidence, Language, Risk, Severity } from "@/lib/types";
 
 export const pct = (p: number | null | undefined): string =>
   p === null || p === undefined ? "—" : `${Math.round(p * 100)}%`;
@@ -34,6 +34,17 @@ export function riskHeading(strings: Record<string, string>, risks: Risk[]): str
   if (risks.length === 0) return strings.risksNone;
   const days = Math.max(...risks.map((r) => r.horizon_days));
   return strings.risks.replace("{days}", String(days));
+}
+
+/** Why an assessment has no risks. Outside the season is a fact about the crop, not an outage. */
+export function noRiskReason(a: Pick<Assessment, "crop_status" | "days_after_sowing">): string {
+  if (a.crop_status === "past_maturity") {
+    return `This crop is past maturity (day ${a.days_after_sowing} after sowing), so there is no forecast risk to assess. To assess a new crop, add the field again with its new sowing date.`;
+  }
+  if (a.crop_status === "pre_sowing") {
+    return `This crop is not sown yet (sowing is ${-a.days_after_sowing} days away) and no growth stage falls inside the forecast window, so there is no forecast risk to assess yet.`;
+  }
+  return "No risk could be computed: the forecast sources were unavailable. See the trace.";
 }
 
 /** The headline risk: highest probability x stage weight. */

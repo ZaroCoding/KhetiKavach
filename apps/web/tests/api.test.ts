@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, apiBaseUrl, fetchHealth, request, streamTrace } from "@/lib/api";
+import { ApiError, apiBaseUrl, fetchHealth, isApiSlow, request, streamTrace, subscribeApiSlow } from "@/lib/api";
+import { noRiskReason } from "@/lib/format";
 
 const noWait = async () => undefined;
 
@@ -81,6 +82,86 @@ describe("api client", () => {
     }) as unknown as typeof fetch;
     await expect(request("/api/fields", { method: "POST" }, flaky, noWait)).resolves.toEqual({ ok: "test-input" });
     expect(urls).toEqual(["http://api.test/api/fields", "http://api.test/health", "http://api.test/api/fields"]);
+  });
+});
+
+describe("waiting for a sleeping server", () => {
+  const original = process.env.NEXT_PUBLIC_API_URL;
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_API_URL = "http://api.test";
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    process.env.NEXT_PUBLIC_API_URL = original;
+    vi.useRealTimers();
+  });
+
+  it("keeps trying for about 90 s before giving up", async () => {
+    const waits: number[] = [];
+    const down = (async () => {
+      throw new TypeError("Failed to fetch");
+    }) as typeof fetch;
+    const record = async (ms: number) => {
+      waits.push(ms);
+    };
+    await expect(fetchHealth(down, record)).rejects.toBeInstanceOf(ApiError);
+    expect(waits.reduce((a, b) => a + b, 0)).toBe(90_000);
+  });
+
+  it("stops early when every attempt hangs, instead of adding up their timeouts", async () => {
+    let calls = 0;
+    const hangs = (async () => {
+      calls++;
+      vi.setSystemTime(Date.now() + 121_000);
+      throw new TypeError("Failed to fetch");
+    }) as typeof fetch;
+    await expect(fetchHealth(hangs, noWait)).rejects.toBeInstanceOf(ApiError);
+    expect(calls).toBe(2);
+  });
+
+  it("shows the notice only while a request is slow, and clears it either way", async () => {
+    const seen: boolean[] = [];
+    const unsubscribe = subscribeApiSlow(() => seen.push(isApiSlow()));
+    let answer: (r: Response) => void = () => undefined;
+    const slow = (() => new Promise<Response>((resolve) => (answer = resolve))) as typeof fetch;
+    const pending = fetchHealth(slow, noWait);
+
+    vi.advanceTimersByTime(5_999);
+    expect(isApiSlow()).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(isApiSlow()).toBe(true);
+
+    answer(new Response(JSON.stringify({ status: "test-input" }), { status: 200 }));
+    await pending;
+    expect(isApiSlow()).toBe(false);
+    expect(seen).toEqual([true, false]);
+    unsubscribe();
+  });
+
+  it("never shows the notice for a quick answer", async () => {
+    const quick = (async () => new Response(JSON.stringify({}), { status: 200 })) as typeof fetch;
+    await fetchHealth(quick, noWait);
+    vi.advanceTimersByTime(60_000);
+    expect(isApiSlow()).toBe(false);
+  });
+});
+
+describe("why an assessment has no risks", () => {
+  it("names a finished crop instead of blaming the data sources", () => {
+    const text = noRiskReason({ crop_status: "past_maturity", days_after_sowing: 123 });
+    expect(text).toContain("past maturity (day 123");
+    expect(text).not.toContain("unavailable");
+  });
+
+  it("names a crop that is not sown yet, counting the days forward", () => {
+    const text = noRiskReason({ crop_status: "pre_sowing", days_after_sowing: -30 });
+    expect(text).toContain("sowing is 30 days away");
+  });
+
+  it("still reports an outage during the season", () => {
+    expect(noRiskReason({ crop_status: "in_season", days_after_sowing: 40 })).toContain("sources were unavailable");
   });
 });
 
