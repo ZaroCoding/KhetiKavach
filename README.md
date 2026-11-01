@@ -659,6 +659,8 @@ winget install OpenJS.NodeJS.LTS ; corepack enable ; corepack prepare pnpm@lates
 
 ### Run it locally
 
+> **Windows: clone into a short path** such as `C:\src\KhetiKavach`. pnpm nests `node_modules` deeply, and under a long parent folder a file path passes Windows' 260-character limit; Vitest then stops with `ERR_PACKAGE_IMPORT_NOT_DEFINED`. A fresh-clone test under a ~150-character parent folder hit exactly this (the failing path was 280 characters); from a short path, lint, typecheck, test and build all pass.
+
 ```bash
 # bash
 git clone https://github.com/ZaroCoding/KhetiKavach.git
