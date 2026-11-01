@@ -88,22 +88,22 @@ async function request<T>(path: string, init?: RequestInit, fetchImpl: typeof fe
 
 export async function fetchHealth(fetchImpl: typeof fetch = fetch): Promise<Health> {
   const base = apiBaseUrl();
-  let response: Response;
-  try {
-    response = await fetchImpl(`${base}/health`, { cache: "no-store" });
-  } catch (err) {
-    // Retry once after 1s to absorb serverless cold-start latency
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      await new Promise((r) => setTimeout(r, 1000));
-      response = await fetchImpl(`${base}/health`, { cache: "no-store" });
-    } catch {
-      handleFetchError(err, base, "/health");
+      const response = await fetchImpl(`${base}/health`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new ApiError(`API /health returned HTTP ${response.status}`, response.status);
+      }
+      return (await response.json()) as Health;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      }
     }
   }
-  if (!response.ok) {
-    throw new ApiError(`API /health returned HTTP ${response.status}`, response.status);
-  }
-  return (await response.json()) as Health;
+  return handleFetchError(lastErr, base, "/health");
 }
 
 export const api = {
