@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -21,7 +21,7 @@ const label = "text-[11px] font-semibold uppercase tracking-wider text-soil-500"
 
 /** Time Machine presets. From 2024-03-14 the agent replays the forecast actually issued that day;
  * earlier dates use the LightGBM model on observed rain. */
-export const PRESETS = [
+const PRESETS = [
   { label: "Mar 2026 harvest rain (forecast replay)", date: "2026-03-15" },
   { label: "Aug 2023 drought (model replay)", date: "2023-08-05" },
   { label: "Mar 2023 harvest rain (model replay)", date: "2023-03-15" },
@@ -36,7 +36,7 @@ function PanelCard({ title, children, className }: { title: string; children: Re
   );
 }
 
-export function PlaceSearch({ onGo }: { onGo: (t: MapTarget) => void }) {
+function PlaceSearch({ onGo }: { onGo: (t: MapTarget) => void }) {
   const [q, setQ] = useState("");
   const [places, setPlaces] = useState<Place[]>([]);
   const search = async () => {

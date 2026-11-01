@@ -1,6 +1,6 @@
-// Mirrors docs/CONTRACTS.md and apps/api/app/schemas.py. Change all three together.
+﻿// Mirrors docs/CONTRACTS.md and apps/api/app/schemas.py. Change all three together.
 
-export type SourceName =
+type SourceName =
   | "planetary_computer_s2"
   | "planetary_computer_s1"
   | "sentinel_hub"
@@ -18,12 +18,12 @@ export type SourceName =
   | "esp32_sensor"
   | "nominatim";
 
-export type Status = "live" | "cached" | "archived" | "unavailable";
+type Status = "live" | "cached" | "archived" | "unavailable";
 export type Crop = "wheat" | "rice" | "cotton" | "soybean";
 export type Language = "en" | "hi" | "pa";
-export type Hazard = "dry_spell" | "heavy_rain" | "harvest_rain";
+type Hazard = "dry_spell" | "heavy_rain" | "harvest_rain";
 export type Severity = "low" | "moderate" | "high" | "severe" | "unknown";
-export type Method = "ensemble" | "multi_model" | "deterministic_replay" | "model" | "climatology";
+type Method = "ensemble" | "multi_model" | "deterministic_replay" | "model" | "climatology";
 export type AssessmentStatus = "queued" | "running" | "completed" | "completed_degraded" | "failed";
 
 export interface GeoJSONPolygon {
@@ -31,7 +31,7 @@ export interface GeoJSONPolygon {
   coordinates: number[][][];
 }
 
-export interface SeriesPoint {
+interface SeriesPoint {
   ts: string;
   value: number;
 }
@@ -48,7 +48,7 @@ export interface Evidence {
   status: Status;
 }
 
-export interface MemberCount {
+interface MemberCount {
   total: number;
   exceeding: number;
 }
@@ -71,7 +71,7 @@ export interface Risk {
   uncertainty_note: string | null;
 }
 
-export interface PlanAction {
+interface PlanAction {
   id: string;
   when: string;
   text: string;
@@ -80,7 +80,7 @@ export interface PlanAction {
   numbers_used: number[];
 }
 
-export interface Source {
+interface Source {
   name: SourceName;
   url: string | null;
   status: Status;
@@ -88,7 +88,7 @@ export interface Source {
   attribution: string;
 }
 
-export interface DataFreshness {
+interface DataFreshness {
   oldest_fetched_at: string | null;
   newest_fetched_at: string | null;
   per_source: Partial<Record<SourceName, { fetched_at: string; status: Status }>>;

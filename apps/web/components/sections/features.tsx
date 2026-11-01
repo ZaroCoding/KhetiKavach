@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
+﻿import type { ReactNode } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export interface FeatureItem {
+interface FeatureItem {
   icon: ReactNode;
   title: string;
   description: string;

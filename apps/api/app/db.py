@@ -7,6 +7,7 @@ tolerates a database that is down at start-up, so /health can report it instead 
 import json
 import logging
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import asyncpg
 from pgvector.asyncpg import register_vector
@@ -27,12 +28,26 @@ async def _init_conn(conn: Any) -> None:
     await register_vector(conn)
 
 
-def _dsn() -> str:
-    # Accept SQLAlchemy-style URLs too (postgresql+psycopg://...).
-    url = get_settings().database_url
-    return url.replace("postgresql+psycopg://", "postgresql://").replace(
+def dsn_for_asyncpg(url: str) -> str:
+    """Make a database URL acceptable to asyncpg.
+
+    SQLAlchemy-style schemes (postgresql+psycopg://) are normalised, and `channel_binding` is
+    dropped: Neon's copy-paste connection string carries `channel_binding=require`, which libpq (so
+    Alembic) understands but asyncpg rejects as an unknown parameter. Other parameters such as
+    `sslmode` are kept.
+    """
+    url = url.replace("postgresql+psycopg://", "postgresql://").replace(
         "postgresql+asyncpg://", "postgresql://"
     )
+    parts = urlsplit(url)
+    kept = [
+        (k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "channel_binding"
+    ]
+    return urlunsplit(parts._replace(query=urlencode(kept)))
+
+
+def _dsn() -> str:
+    return dsn_for_asyncpg(get_settings().database_url)
 
 
 async def init_pool() -> None:

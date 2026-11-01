@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -18,7 +18,7 @@ export interface NavItem {
 const base =
   "flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm transition-colors hover:bg-soil-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden";
 
-export function navItemClass(active: boolean | undefined): string {
+function navItemClass(active: boolean | undefined): string {
   return cn(base, active ? "bg-soil-100 font-semibold text-leaf-700" : "text-soil-700");
 }
 

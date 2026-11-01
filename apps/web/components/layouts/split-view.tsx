@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { Children, Fragment, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-export interface SplitPanelConfig {
+interface SplitPanelConfig {
   id: string;
   label: string;
   /** Initial share of the container, in percent. All panels together must add up to 100. */

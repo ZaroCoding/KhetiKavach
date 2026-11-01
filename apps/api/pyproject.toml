@@ -16,6 +16,8 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "sse-starlette>=2.1",
     "langgraph>=0.2.50",
+    "langchain-core>=1.0",
+    "starlette>=0.40",
     "google-genai>=1.0",
     "fastembed>=0.4",
     "numpy>=1.26",
@@ -29,7 +31,6 @@ dependencies = [
     "scikit-learn>=1.5",
     "joblib>=1.4",
     "pymupdf>=1.24",
-    "python-dateutil>=2.9",
 ]
 
 [dependency-groups]

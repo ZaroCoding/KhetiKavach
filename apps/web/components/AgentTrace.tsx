@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef } from "react";
 
@@ -32,7 +32,7 @@ function summarise(summary: unknown): string {
   );
 }
 
-export function describe(e: TraceEvent): string {
+function describe(e: TraceEvent): string {
   if (e.event === "done") return `finished: ${text((e.data as Record<string, unknown>).status)}`;
   if (e.event === "error") return `error: ${text((e.data as Record<string, unknown>).message)}`;
   const step = e.data as StepData;

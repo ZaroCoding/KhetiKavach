@@ -1,22 +1,11 @@
 """Map risk outputs to ICAR-CRIDA District Agriculture Contingency Plan scenarios.
 
 CRIDA plans are organised by weather scenario. Section headings vary slightly between districts, so
-ingestion matches them by keyword (see HEADING_PATTERNS) and stores the canonical scenario key.
+ingestion matches them by keyword (see HEADING_PATTERNS) and stores the canonical scenario key
+(the `doc_chunks.scenario` values of ruling B-6).
 """
 
 import re
-
-SCENARIOS = {
-    "early_drought": "Early season drought (delayed onset of monsoon)",
-    "early_dry_spell": "Normal onset followed by 15-20 days dry spell after sowing",
-    "mid_drought": "Mid season drought (long dry spell, >2 weeks rainless period)",
-    "terminal_drought": "Terminal drought (early withdrawal of monsoon)",
-    "excess_rain": "Excess rainfall / heavy rainfall / floods",
-    "unseasonal_rain": "Unusual / unseasonal rains, heavy rain with high wind in a short span",
-    "heat_cold_hail": "Heat wave / cold wave / frost / hailstorm",
-    "pest_disease": "Pest and disease outbreak due to weather",
-    "general": "General / not scenario specific",
-}
 
 # Order matters: first match wins.
 HEADING_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -58,14 +47,6 @@ HEADING_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("heat_cold_hail", re.compile(r"heat\s+wave|cold\s+wave|frost|hail", re.I)),
     ("pest_disease", re.compile(r"pest|disease|outbreak", re.I)),
 ]
-
-
-def scenario_for_heading(text: str) -> str | None:
-    """Scenario named anywhere in `text` (used for short headings already isolated)."""
-    for key, pat in HEADING_PATTERNS:
-        if pat.search(text):
-            return key
-    return None
 
 
 def heading_scenario(line: str) -> str | None:
