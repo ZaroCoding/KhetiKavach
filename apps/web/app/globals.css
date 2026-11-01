@@ -4,6 +4,24 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* KhetKavach palette: soil, leaf, monsoon sky. Risk colours differ in lightness as well as hue and
+   are always paired with a text label. */
+@theme {
+    --color-soil-50: #faf7f2;
+    --color-soil-100: #f1ebe0;
+    --color-soil-200: #e2d6c3;
+    --color-soil-500: #8a7356;
+    --color-soil-700: #5a4a36;
+    --color-soil-900: #2b231a;
+    --color-leaf-500: #3f7d4e;
+    --color-leaf-700: #2b5a37;
+    --color-sky-600: #2f6690;
+    --color-risk-low: #3f7d4e;
+    --color-risk-moderate: #b07a0f;
+    --color-risk-high: #b3361f;
+    --color-risk-severe: #7a1f12;
+}
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: var(--font-sans);
@@ -48,23 +66,23 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
+    --background: #faf7f2;
+    --foreground: #2b231a;
+    --card: #ffffff;
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
+    --primary: #2b5a37;
+    --primary-foreground: #faf7f2;
+    --secondary: #f1ebe0;
     --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
+    --muted: #f1ebe0;
+    --muted-foreground: #6b5a45;
     --accent: oklch(0.97 0 0);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
+    --border: #e2d6c3;
+    --input: #e2d6c3;
     --ring: oklch(0.708 0 0);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
@@ -126,4 +144,9 @@
   html {
     @apply font-sans;
     }
+}
+.trace-enter { animation: trace-in 220ms ease-out; }
+@keyframes trace-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: none; }
 }

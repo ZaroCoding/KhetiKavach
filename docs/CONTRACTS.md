@@ -1,8 +1,12 @@
 # KhetKavach Contracts
 
 Single source of truth for API shapes, SSE events, and database tables. Derived from
-`docs/STRATEGY.md` section F, the build runbook, and the decisions for Q-1..Q-23 (see "Decisions
-log"). Change this file first, then Pydantic models and TypeScript types.
+`docs/STRATEGY.md` section F, the build runbook, the decisions for Q-1..Q-23 (see "Decisions
+log") and the build rulings B-1..B-21 that closed every remaining question and conflict (see
+"Rulings"). Change this file first, then Pydantic models (`apps/api/app/schemas.py`) and
+TypeScript types (`apps/web/lib/types.ts`).
+
+**Status: FROZEN** (all `[R-n]` tags below are now decided by the ruling of the same number).
 
 ## Conventions
 
@@ -48,11 +52,14 @@ For 422, `details` is `[{ "field": "<dotted path>", "reason": "<human-readable>"
 ```
 planetary_computer_s2   planetary_computer_s1   sentinel_hub
 open_meteo_ensemble     open_meteo_forecast     open_meteo_archive
-open_meteo_historical_forecast
+open_meteo_single_runs
 imd_gridded             imd_api                 nasa_power
-bhuvan                  gemini                  crida_plans
-esp32_sensor
+bhuvan                  gemini                  groq
+crida_plans             esp32_sensor            nominatim
 ```
+16 values (B-15). `open_meteo_historical_forecast` was removed: that API stitches the first hours
+of every model run into one series, so replaying it as a 15-day forecast leaks observed weather
+into the past. Time Machine uses `open_meteo_single_runs` (the run actually issued on the date).
 Used in `Evidence.source`, `Source.name`, `data_freshness.per_source` keys, `/health` `sources`
 keys, admin `{source}` path params, and the CHECK constraints on `observations.source`,
 `api_cache.source`, and `source_switches.source`.
@@ -82,22 +89,27 @@ keys, admin `{source}` path params, and the CHECK constraints on `observations.s
 
 ```json
 {
-  "hazard": "<dry_spell | heavy_rain>",
+  "hazard": "<dry_spell | heavy_rain | harvest_rain>",
   "probability": "<number 0..1 | null>",
-  "severity": "<low | moderate | high | severe>",
+  "probability_ci90": "<[number, number] | null>",
+  "climatology_probability": "<number 0..1 | null>",
+  "severity": "<low | moderate | high | severe | unknown>",
   "threshold": { "description": "<string>", "value": "<number>", "unit": "<string>" },
   "horizon_days": "<integer>",
   "crop_stage": "<string>",
   "stage_weight": "<number>",
-  "method": "<ensemble | deterministic_replay>",
+  "method": "<ensemble | multi_model | deterministic_replay | model | climatology>",
   "members": {
     "ecmwf": "<{ total: integer, exceeding: integer } | null>",
     "gfs":   "<{ total: integer, exceeding: integer } | null>"
   },
   "driver_ids": ["<Evidence.id>"],
+  "explanation": ["<string>"],
+  "window": { "start": "<YYYY-MM-DD>", "end": "<YYYY-MM-DD>" },
   "uncertainty_note": "<string | null>"
 }
 ```
+See rulings B-3 (members, severity, thresholds) and B-16 (method values, explanation).
 `members` inner shape is [R-3]; `null` in `deterministic_replay`. `crop_stage` vocabulary [R-2].
 `probability` is `null` when it cannot be computed; severity in that case [R-3]. Heavy rain has two
 criteria in the runbook but one `threshold` object: [R-3].
@@ -217,6 +229,9 @@ Response **200**:
   "risks": ["<Risk>"],
   "evidence": ["<Evidence>"],
   "plan": ["<PlanAction>"],
+  "plan_summary": "<string | null>",
+  "plan_generator": "<llm | rule_based | none | null>",
+  "replay_basis": "<archived_forecast | observed_rain_model | null>",
   "sources": ["<Source>"],
   "data_freshness": "<data_freshness>"
 }
@@ -416,6 +431,7 @@ This table is the trace.
 | assessment_id | uuid | FK assessments(id) ON DELETE CASCADE |
 | seq | integer | UNIQUE (assessment_id, seq) |
 | ts *(new)* | timestamptz | DEFAULT now(); feeds the envelope `ts` [R-4] |
+| event *(new, B-4)* | text | CHECK (event IN the seven SSE event names) |
 | node | text | |
 | tool | text NULL | |
 | status | text | CHECK (status IN ('started','succeeded','failed','retried','skipped')) |
@@ -476,8 +492,8 @@ UNIQUE (field_id, telegram_chat_id) [R-8].
 | id | bigint | PK, GENERATED ALWAYS AS IDENTITY |
 | subscription_id | bigint | FK alert_subscriptions(id) |
 | assessment_id | uuid | FK assessments(id) |
-| hazard | text | CHECK (hazard IN ('dry_spell','heavy_rain')) |
-| severity | text | CHECK (severity IN ('low','moderate','high','severe')) |
+| hazard | text | CHECK (hazard IN ('dry_spell','heavy_rain','harvest_rain')) |
+| severity | text | CHECK (severity IN ('low','moderate','high','severe','unknown')) |
 | message_hash | text | |
 | status | text | CHECK (status IN ('sent','failed')) [R-7] |
 | sent_at | timestamptz | DEFAULT now() |
@@ -519,68 +535,95 @@ A source with no row is enabled [R-7].
 - **Q-22** `imd_rain_daily(lat real, lon real, date, mm real)`, PK (lat, lon, date).
 - **Q-23** `doc_chunks` gains `doc_title`, `plan_year`, `source_url`, `chunk_index`; the citation id is the chunk's UUID `id`.
 
-## Conflicts with STRATEGY.md, ARCHITECTURE.md, CLAUDE.md, and the runbook
+## Additions made by the build rulings
 
-Nothing below was resolved silently; each needs a ruling.
+### GET /api/geocode?q=<text> (B-12, closes C-1)
+Village/place search proxied through the `nominatim` connector (cached 30 days). 200:
+`[ { "name": "<string>", "lat": "<number>", "lon": "<number>", "district": "<string | null>" } ]`, at
+most 5, India only. Upstream down with no cache: 503 `UPSTREAM_UNAVAILABLE`.
 
-- **C-1 (Q-5 vs CLAUDE.md rule 3, ARCHITECTURE, STRATEGY F).** The browser calls Nominatim
-  directly. CLAUDE.md says every external call goes through `apps/api/app/connectors` and the
-  frontend never calls an external data source; ARCHITECTURE shows the UI talking only to the API.
-  Nominatim (and the basemap tiles) are also outside the `SourceName` enum.
-- **C-2 (Q-5 vs STRATEGY F and J.6).** STRATEGY validates "outside India" and the demo script has a
-  judge pick "any point in India". A per-district bbox check makes any in-India point outside the
-  two districts a 422, so that demo step would fail. STRATEGY also derives district via Bhuvan; the
-  decision has the client send it, leaving `bhuvan` in the enum unused.
-- **C-3 (Q-20 vs STRATEGY F, ARCHITECTURE).** Both list six SSE events; Q-20 adds a seventh, `error`.
-- **C-4 (Q-3 vs Q-18).** "All errors use the envelope" but `/health` returns the health body on 503.
-  Treated here as the exception.
-- **C-5 (Q-10/Q-11 vs CLAUDE.md rule 2, STRATEGY I).** "Every number carries source + fetched_at".
-  `Risk.probability`, `stage_weight`, `threshold.value`, `horizon_days`, `members` and
-  `PlanAction.numbers_used` carry no provenance of their own; the link is indirect via `driver_ids`.
-- **C-6 (Q-19 vs runbook Prompt 4).** The runbook asks for a kill switch via env var plus an admin
-  endpoint; the decision keeps only the persisted `source_switches` table. The env switch is dropped.
-- **C-7 (Q-14 vs STRATEGY E and I).** STRATEGY names a Groq-hosted LLM backup; no `SourceName`
-  exists for it.
-- **C-8 (tables and columns vs STRATEGY F and ARCHITECTURE).** Added: tables `sensor_devices`,
-  `source_switches`; columns `fields.short_code`, `fields.created_at`, `assessments.language`,
-  `.evidence`, `.sources`, `.data_freshness`, `.created_at`, `.completed_at`, `agent_steps.id`,
-  `.ts`, and the `doc_chunks` columns. ARCHITECTURE's database paragraph does not list these.
-- **C-9 (Q-10 vs runbook Prompt 8).** Heavy rain has two criteria (any day over 20 mm, or a 3-day
-  total over 50 mm) but Risk has one `threshold` object. See R-3.
-- **C-10 (Q-9 vs runbook Prompt 11).** The plan includes a 2-line summary; the response shape has no
-  field for it.
+### GET /api/model (B-17)
+The dry-spell model card exactly as `scripts/train_dryspell.py` wrote it, or
+`{ "status": "not_trained" }`.
 
-## REMAINING QUESTIONS
+### GET /api/districts additions (B-1)
+Each item also carries `"state": "<string>"`, `"plan_title": "<string>"`, `"plan_year": "<integer>"`,
+`"plan_chunks": "<integer>"` (indexed passages) and `"bbox_source": "<SourceName>"`.
+`bbox` is `null` when the boundary lookup is unavailable and nothing is cached.
 
-Provisional values already written above are tagged with the same R-number.
+### Table assessments additions
+`plan_summary text NULL`, `plan_generator text NULL CHECK (plan_generator IN ('llm','rule_based','none'))`,
+`replay_basis text NULL CHECK (replay_basis IN ('archived_forecast','observed_rain_model'))`, `error text NULL`.
 
-- **R-1 Districts.** Names are decided (Ludhiana, Dharwad). Still open: the `code` scheme (the
-  plan filenames "PUNJAB 5" and "KA7" are CRIDA numbering, not an official code; use them, or an
-  official code such as LGD?), the `bbox` values and the official boundary dataset they come from
-  (no invented data), where the list lives (config vs table), and the `GET /api/districts` field
-  names.
-- **R-2 Vocabularies.** The Evidence `variable` names, Evidence `id` format, `Risk.crop_stage`
-  values, and `observations.variable` (same names).
-- **R-3 Risk detail.** The `members` shape; `severity` when `probability` is null; how a heavy-rain
-  risk with two criteria is expressed in a single `threshold`.
-- **R-4 Trace mapping.** How a replayed `agent_steps` row recovers its event name; which `node`
-  `done`/`error` rows use; per-event `detail` keys; mapping of events to step statuses; the `error`
-  payload; whether `done` always follows `error`.
-- **R-5 Plan shape.** `PlanAction.id` type; `numbers_used` element type; where the plan summary goes
-  (or confirmation it is dropped); where plans are cached by input hash (STRATEGY section I).
-- **R-6 doc_chunks values.** CHECK or value sets for `scenario` and `crop` (CRIDA plans cover crops
-  beyond the four-crop enum).
-- **R-7 Small naming and nullability gaps.** Error code names and 422 `details` shape; `UNAUTHORIZED`
-  for admin keys; 404 for non-UUID ids; 422 for unknown district filter; relative stream/result URLs;
-  unavailable-evidence `fetched_at`; `Source.status` and `url` nullability; `/health` source status
-  values, latency window, and 503 body; admin list item shape; SHA-256 for `key_hash`;
-  `alerts_sent.status` values; `fields.name` nullable; FK delete rules; absent `source_switches`
-  row = enabled; derived `mode`.
-- **R-8 Monitoring and subscriptions.** `alert_subscriptions.id` type and uniqueness; value types and
-  counting of `checked/alerted/skipped/errors`; the baseline for "severity rose a band since the
-  last run"; language used for the monitor's re-assessment.
-- **R-9 Telegram.** Bot reply texts (unknown code, success) and status for a bad secret.
-- **R-10 as_of edges.** Whether "today" is the server's UTC date, and how a very recent `as_of`
-  (inside the roughly 3-day ensemble-member window) is handled: `replay` mode versus ensemble.
-- **R-11 Degraded status.** The exact definition of `completed_degraded`, and `model_version` while
-  an assessment is not yet complete.
+### Table source_health (new, B-7)
+| Column | Type | Constraints |
+|---|---|---|
+| source | text | PK, `<SourceCheck>` |
+| last_ok_at | timestamptz NULL | |
+| last_error_at | timestamptz NULL | |
+| last_error | text NULL | |
+| last_latency_ms | integer NULL | |
+
+### Table imd_cells (new, B-18)
+`lat real, lon real, PRIMARY KEY (lat, lon)`: one row per loaded IMD grid cell, for nearest-cell lookup.
+
+## Rulings (build) — every former conflict and remaining question, decided
+
+- **B-1 (R-1) Districts.** Codes `PB_LUDHIANA` and `KA_DHARWAD` (state ISO 3166-2:IN suffix + name).
+  The list lives in `apps/api/app/districts.py` (code, name, state, plan file, plan year). `bbox` is
+  fetched from OpenStreetMap Nominatim's district boundary (`nominatim`, cached one year) and shown
+  with its source; no hand-typed coordinates. Replace with an official LGD/Survey of India boundary
+  if the team obtains one.
+- **B-2 (C-2) "Any point in India".** Field validation keeps the district check. The demo step
+  becomes: a judge picks any point; inside a demo district it is assessed, outside it the 422
+  reason names the two districts whose plans are indexed. India-wide bounds are checked first so
+  the reason is specific. `bhuvan` stays in the enum, unused.
+- **B-3 (R-3, C-9) Risk detail.** `members.ecmwf` / `members.gfs` = `{ "total": int, "exceeding": int }`
+  or `null`. Events: dry_spell = >= 10 consecutive days < 2.5 mm (IMD rainy-day threshold);
+  heavy_rain = any day >= 20 mm OR any 3-day total >= 50 mm (runbook criteria; `threshold.value` = 20,
+  `unit` = "mm/day", `description` names both); harvest_rain (ripening days only) = any day >= 15.6 mm
+  OR 3-day total >= 25 mm. Severity score = probability x stage_weight; bands low < 0.2 <= moderate
+  < 0.45 <= high < 0.7 <= severe. Probability `null` => severity `unknown`.
+- **B-4 (R-4) Trace mapping.** `agent_steps.event` stores the SSE event name. `done` uses node
+  `finalize`, `error` uses node `agent`. Default step status per event: node_started=started,
+  tool_result=succeeded|failed, gate_failed=failed, fallback_used=retried, verifier_rejected=failed,
+  done=succeeded, error=failed. `gate_failed.detail.check` adds `"error"` (source call failed). One
+  `verifier_rejected` per problem found. `done` always follows `error`.
+- **B-5 (R-5, C-10) Plan.** `PlanAction.id` = `"a1"`, `"a2"`, ...; `numbers_used` = numbers. The summary is
+  `plan_summary` on the assessment. Plans are cached in `api_cache` (source `gemini`/`groq`) by
+  sha256 of the prompt for 6 h.
+- **B-6 (R-6) doc_chunks.** `scenario` CHECK in (early_drought, early_dry_spell, mid_drought,
+  terminal_drought, excess_rain, unseasonal_rain, heat_cold_hail, pest_disease, general). `crop` is
+  free text, NULL = applies to all crops (CRIDA plans cover more crops than the field enum).
+- **B-7 (R-7) Small gaps.** All provisional values written above are accepted as-is. Source
+  health is kept in the new `source_health` table; `/health` source status = `ok` (last call ok),
+  `degraded` (last call failed but cache served), `down` (last call failed), `unknown` (never
+  called); latency window = last 10 completed assessments.
+- **B-8 (R-8) Monitoring.** `checked` = monitored fields re-assessed; `alerted` = messages sent;
+  `skipped` = fields with no alert due; `errors` = failed assessments or sends. Baseline for
+  "severity rose a band" = the field's previous completed live assessment. The re-assessment
+  runs in English; the alert is formatted in each subscription's language.
+- **B-9 (R-9) Telegram.** Replies: success "Subscribed to alerts for <field>." + Hindi line;
+  unknown code "Field code not found." + Hindi line; no code: usage text. Bad secret: 401.
+- **B-10 (R-10) as_of.** "today" = server UTC date. `as_of` = today is treated as live (stored
+  NULL). Past dates >= 2024-03-14 replay the archived ECMWF IFS run issued that day
+  (`replay_basis = archived_forecast`, method `deterministic_replay`, YES/NO not a probability);
+  earlier dates use the LightGBM model on observed IMD rain (`replay_basis = observed_rain_model`).
+- **B-11 (R-11) Degraded.** `completed_degraded` iff any fallback was used, any evidence is
+  `unavailable`, or the plan is rule-based or empty. `model_version` is null until completion.
+- **B-12 (C-1) Geocoding.** The browser no longer calls Nominatim: `GET /api/geocode` above. Map
+  tiles are a display basemap, not a data source, and stay client-side (attributed in the UI).
+- **B-13 (C-3)** Seven SSE events, including `error`, are final.
+- **B-14 (C-4)** `/health` is the one non-envelope response, as written.
+- **B-15 (C-7)** `groq` and `nominatim` added to SourceName.
+- **B-16 (C-5)** Risk numbers trace to evidence via `driver_ids`; each risk also carries
+  `explanation` strings built only from those evidence values, and the verifier checks plan
+  numbers against both.
+- **B-17 (C-6)** The kill switch is `source_switches` only (no env var).
+- **B-18 (C-8)** All added tables and columns are listed above and in `apps/api/alembic/versions`.
+- **B-19** Crops stay wheat, rice, cotton, soybean. Stage sensitivities come from FAO-33 (wheat,
+  cotton, soybean) and are marked team-set for rice.
+- **B-20** Runtime DB access is plain SQL through asyncpg; SQLAlchemy + Alembic are used for
+  migrations only (keeps every query readable in Q&A).
+- **B-21** PDF text is extracted with PyMuPDF (pypdf garbles the Dharwad plan's font encoding:
+  spaces come out as "m", hyphens as "D").

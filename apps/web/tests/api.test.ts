@@ -27,3 +27,23 @@ describe("api client", () => {
     await expect(fetchHealth(failing)).rejects.toThrow("HTTP 503");
   });
 });
+
+describe("trace parsing", () => {
+  it("parses a contract SSE envelope", async () => {
+    const { parseTraceEvent } = await import("@/lib/api");
+    const raw = JSON.stringify({
+      seq: 3,
+      ts: "2026-11-01T00:00:00Z",
+      event: "fallback_used",
+      assessment_id: "a",
+      node: "fallback",
+      data: { tool: "gefs_ensemble", status: "retried", latency_ms: null, detail: { from_source: "x", to_source: "y" } },
+    });
+    expect(parseTraceEvent(raw).event).toBe("fallback_used");
+  });
+
+  it("rejects a malformed payload", async () => {
+    const { parseTraceEvent } = await import("@/lib/api");
+    expect(() => parseTraceEvent(JSON.stringify({ hello: "world" }))).toThrow(ApiError);
+  });
+});

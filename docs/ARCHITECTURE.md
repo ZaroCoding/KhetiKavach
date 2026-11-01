@@ -66,7 +66,7 @@ flowchart TD
   F --> G["retrieve: district plan passages for scenario and stage"]
   G --> H["draft plan: Gemini, JSON schema"]
   H --> I{"verify: every number in evidence, every action cited"}
-  I -->|"fail, up to 2 retries"| H
+  I -->|"fail, up to 2 redrafts"| H
   I -->|"still failing"| J["rule-based plan from retrieved passages"]
   I -->|"pass"| K["persist, notify, respond"]
   J --> K
@@ -106,14 +106,23 @@ rain, weighted by crop-stage sensitivity, with a LightGBM dry-spell model evalua
 climatology as a P1 addition. When an input is unavailable it widens uncertainty rather than
 filling a value. Outputs yield-risk exposure, not tonnes per hectare.
 
-**Retriever + verifier.** The retriever runs pgvector search (multilingual-e5-small, 384-dim)
-over ICAR-CRIDA district contingency plan chunks for the scenario, crop, and stage. Gemini Flash
-drafts a JSON-schema plan whose actions are keyed to passage ids. The verifier rejects any number
-not in the evidence and any action without a citation, forcing up to two rewrites, then falls
-back to a rule-based plan built directly from the passages.
+**Retriever + verifier.** CRIDA plans are extracted with PyMuPDF and split at scenario headings,
+so each chunk belongs to one contingency scenario. Retrieval filters by district, scenario and
+crop, then fuses pgvector cosine rank (paraphrase-multilingual-MiniLM-L12-v2 via fastembed,
+384-dim, CPU) with Postgres full-text rank. Gemini Flash (Groq backup) drafts a JSON-schema plan
+whose actions cite chunk ids. The deterministic verifier normalises Hindi/Punjabi digits, rejects
+any number not in the evidence or the cited passage, any date outside the forecast window and any
+missing citation, forcing up to two redrafts (three drafts total), then falls back to a
+rule-based plan quoted directly from the passages.
 
-**Scheduler.** Runs every 6 hours (APScheduler in-process, or an external caller hitting
-`POST /api/jobs/monitor` with an admin key). Re-assesses each monitored field via the same agent
+**Time Machine.** `as_of` from 2024-03-14 replays the ECMWF IFS run actually issued that day
+(Open-Meteo Single Runs API: a yes/no outcome). Earlier dates have no archived forecast, so the
+dry-spell risk comes from the LightGBM model on IMD rain observed up to the day before, and other
+hazards from IMD climatology. The Historical Forecast API is never used for replays: it stitches
+the first hours of every run together, which would leak observed weather into the "forecast".
+
+**Scheduler.** Cloud Scheduler calls `POST /api/jobs/monitor` with the admin key every 6 hours
+(Cloud Run scales to zero, so an in-process timer would silently stop). Re-assesses each monitored field via the same agent
 and triggers alerts on threshold crossings.
 
 **Connectors.** The sole gateway to the outside world. Each connector wraps one source with a
@@ -128,5 +137,6 @@ vectors, sensor readings, and alert subscriptions/history.
 
 **External sources.** Planetary Computer STAC (Sentinel-2/1) with Copernicus Sentinel Hub as
 fallback; Open-Meteo for ensemble, forecast, and archive (NASA POWER fallback); IMD gridded
-rainfall for history and the IMD API for an optional warnings overlay; Bhuvan for reverse
-geocoding; Gemini Flash for plan drafting only.
+rainfall for history and climatology; OpenStreetMap Nominatim for district boundaries and
+village search (via `/api/geocode`); Gemini Flash (Groq backup) for plan drafting only. The IMD
+API overlay and Bhuvan are optional and unused.

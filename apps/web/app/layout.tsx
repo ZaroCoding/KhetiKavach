@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 
+import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -15,8 +16,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "KhetKavach",
-  description: "Field-level climate risk early warning",
+  title: "KhetKavach: field-level climate risk",
+  description: "Probabilistic dry-spell and unseasonal-rain risk per field, with cited contingency actions.",
 };
 
 export default function RootLayout({

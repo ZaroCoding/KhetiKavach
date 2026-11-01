@@ -13,15 +13,16 @@ Plan of record: `docs/STRATEGY.md`. Architecture: `docs/ARCHITECTURE.md`. API sh
 ```
 apps/web    Next.js 14 (App Router), TypeScript, Tailwind, shadcn/ui, MapLibre GL JS,
             Terra Draw, Recharts. Deployed on Vercel.
-apps/api    Python 3.11, FastAPI, Pydantic v2, LangGraph, SQLAlchemy 2 + GeoAlchemy2,
-            Alembic. Deployed as a Docker container (Cloud Run or Render).
-            app/connectors  ALL external I/O lives here
-            app/agent       LangGraph nodes and graph
-            app/risk        ensemble probabilities, LightGBM model
-            app/rag         retriever + verifier
+apps/api    Python 3.11, FastAPI, Pydantic v2, LangGraph, asyncpg (plain SQL at runtime),
+            SQLAlchemy + Alembic for migrations only (ruling B-20). Docker (Cloud Run or Render).
+            app/connectors  ALL external I/O lives here, including the LLM and Telegram SDK calls
+            app/agent       LangGraph nodes and graph, tools, quality gates, trace, evidence
+            app/risk        crop stages, ensemble counting, LightGBM model
+            app/rag         scenarios, PDF text, embeddings, retriever, verifier, rule-based plan
+            app/routers     REST + SSE routes; app/schemas.py mirrors docs/CONTRACTS.md
+            alembic/        migrations; scripts/ data loaders, training, admin, edge-case drill
 infra/      Dockerfiles, CI workflows, deploy config
-data/       Download/ingest scripts and setup docs for real datasets (IMD, CRIDA PDFs).
-            Never hand-written values.
+data/       The two CRIDA plan PDFs and setup docs (data/README.md). Never hand-written values.
 docs/       STRATEGY.md, ARCHITECTURE.md, CONTRACTS.md
 ```
 
@@ -35,7 +36,10 @@ API (run from `apps/api`):
 - Test: `uv run pytest` (single: `uv run pytest tests/connectors/test_open_meteo.py -k name`)
 - Lint + format: `uv run ruff check . && uv run ruff format --check .`
 - Types: `uv run mypy app`
-- Migrations: `uv run alembic upgrade head`; new: `uv run alembic revision --autogenerate -m "msg"`
+- Migrations: `uv run alembic upgrade head`; new: `uv run alembic revision -m "msg"` (write SQL by hand)
+- Data: `uv run --group data python -m scripts.load_imd --district PB_LUDHIANA`,
+  `uv run python -m scripts.ingest_crida --district PB_LUDHIANA` (`--dry-run` to preview),
+  `uv run python -m scripts.train_dryspell`
 
 Web (run from `apps/web`):
 - Install: `pnpm install`
