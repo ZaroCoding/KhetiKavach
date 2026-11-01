@@ -45,7 +45,7 @@ def build_samples(cell_df: pd.DataFrame, lat: float, lon: float) -> list[dict[st
     for t in clim_years.index[::1]:
         nxt = s[t : t + timedelta(days=14)].to_numpy()
         if len(nxt) == 15 and not np.isnan(nxt).any():
-            events.setdefault(t.dayofyear, []).append(longest_dry_run(nxt) >= DRY_SPELL_DAYS)
+            events.setdefault(t.day_of_year, []).append(longest_dry_run(nxt) >= DRY_SPELL_DAYS)
     clim = {}
     for doy in range(1, 367):
         pool = [e for d in range(doy - 7, doy + 8) for e in events.get((d - 1) % 366 + 1, [])]
@@ -58,7 +58,7 @@ def build_samples(cell_df: pd.DataFrame, lat: float, lon: float) -> list[dict[st
         nxt = s[t : t + timedelta(days=14)].to_numpy()
         if len(past) != 60 or len(nxt) != 15 or np.isnan(past).any() or np.isnan(nxt).any():
             continue
-        cp = clim.get(t.dayofyear, np.nan)
+        cp = clim.get(t.day_of_year, np.nan)
         if np.isnan(cp):
             continue
         f = features_from_series(list(past), t.date(), cp, lat, lon)

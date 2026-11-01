@@ -210,3 +210,38 @@ def test_failed_source_moves_down_chain() -> None:
         radar_planned=False,
     )
     assert g.action == "next_source" and g.check == "error"
+
+
+def test_heading_scenario_real_text() -> None:
+    from app.rag.scenarios import heading_scenario
+
+    assert (
+        heading_scenario("Heavy rainfall with high speed winds in a short span")
+        == "unseasonal_rain"
+    )
+    assert heading_scenario("Heavy rainfall with high") == "unseasonal_rain"
+    unusual_heading = (
+        "2.2 Unusual rains (untimely, unseasonal etc) (for both rainfed and irrigated situations)"
+    )
+    assert heading_scenario(unusual_heading) == "unseasonal_rain"
+    assert heading_scenario("Early season drought (delayed onset)") == "early_drought"
+    assert (
+        heading_scenario("Normal onset followed by 15-20 days dry spell after sowing")
+        == "early_dry_spell"
+    )
+    assert heading_scenario("Mid season drought (long dry spell)") == "mid_drought"
+    assert heading_scenario("Terminal drought (early withdrawal)") == "terminal_drought"
+    assert heading_scenario("Floods") == "excess_rain"
+    assert (
+        heading_scenario("Continuous high rainfall in a short span leading to water logging")
+        == "excess_rain"
+    )
+    assert heading_scenario("Transient water logging/ partial inundation") == "excess_rain"
+    assert heading_scenario("Continuous submergence") == "excess_rain"
+    assert heading_scenario("2.1.2 Drought - Irrigated situation") == "early_drought"
+    assert (
+        heading_scenario("Delayed release of water in canals due to low rainfall")
+        == "early_drought"
+    )
+    assert heading_scenario("Heat wave") == "heat_cold_hail"
+    assert heading_scenario("Outbreak of pests and diseases") == "pest_disease"

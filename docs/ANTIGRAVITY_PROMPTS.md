@@ -77,7 +77,7 @@ If the Statistical API rejects P1D intervals or resolution, adjust per its docs 
 ## Phase 4: data load + RAG (M4 with M3) · H6–H14
 ```text
 Load real data and prove retrieval. 1) `uv run --group data python -m scripts.load_imd --district
-PB_LUDHIANA` and KA_DHARWAD (1951–2023); report rows and imd_cells. 2) `scripts.ingest_crida` for
+PB_LUDHIANA` and KA_DHARWAD (1951–2026); report rows and imd_cells. 2) `scripts.ingest_crida` for
 both districts (run --dry-run first; paste the scenario counts). 3) For a soybean field in Dharwad at
 flowering and a wheat field in Ludhiana at ripening, print the top 4 retrieved passages with page and
 scenario, and judge whether they match the hazard. If headings are mis-detected, improve

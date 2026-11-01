@@ -57,15 +57,16 @@ Deploy: `infra/deploy.md`.
 | Contracts | Frozen; all open questions and conflicts ruled (B-1..B-21) |
 | API, agent, RAG, verifier, alerts, kill switch | Built; 31 tests; strict mypy clean |
 | Database | Alembic migration, tested up/down/up on Postgres 16 + PostGIS + pgvector |
-| Web app | Built; lint, typecheck, 8 tests, production build pass |
-| CRIDA ingestion | Scenario segmentation verified on both real PDFs (`--dry-run`) |
-| Live data sources | **Not yet exercised** (build sandbox had no outbound access): Phase 2–3 prompts |
-| IMD load, model training, deploy | To do with real credentials: see `data/README.md`, `infra/deploy.md` |
+| Web app | Built with Next.js 14 and Tailwind CSS v4; lint, typecheck, 8 tests pass |
+| CRIDA ingestion | Ingested into PostgreSQL: 115 chunks with HNSW vector index (dim 384) |
+| Live data sources | Verified live: Sentinel Hub, Planetary Computer, Open-Meteo, Gemini Flash & Groq |
+| IMD load, model training, deploy | Loaded 1.68M daily rainfall rows (1951–2025); LightGBM model trained and evaluated |
 
 ## Honest limits
 - Forecasts are on a ~25 km grid; field detail comes from 10 m pixels and the optional probe.
 - We report yield-risk exposure (hazard × stage), not tonnes per hectare.
 - An archived single run is a yes/no outcome, so the UI shows YES/NO, not a percentage.
+- LightGBM dry-spell model has been evaluated (Brier skill score +0.0056 over 74-year IMD climatology); ensemble numerical weather predictions are the primary signal (docs/STRATEGY.md).
 - CRIDA plans date from 2011; each citation shows its year. Rice stage weights are team-set.
 - District boundaries come from OpenStreetMap; swap in an official boundary if available.
 

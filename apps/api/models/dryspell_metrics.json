@@ -1,0 +1,61 @@
+{
+  "version": "dryspell-lgbm-v1",
+  "trained_on": "2026-11-01",
+  "target": ">= 10 consecutive days < 2.5 mm in the next 15 days",
+  "train_period": "1951-2005",
+  "val_period": "2006-2012",
+  "test_period": "2013-2022",
+  "n_cells": 96,
+  "n_train": 129600,
+  "n_test": 46752,
+  "test_event_rate": 0.4445,
+  "brier_model": 0.1667,
+  "brier_climatology": 0.1676,
+  "brier_skill_score_vs_climatology": 0.0056,
+  "roc_auc_model": 0.838,
+  "roc_auc_climatology": 0.8388,
+  "reliability": [
+    {
+      "mean_predicted": 0.041,
+      "observed_freq": 0.041
+    },
+    {
+      "mean_predicted": 0.13,
+      "observed_freq": 0.11
+    },
+    {
+      "mean_predicted": 0.214,
+      "observed_freq": 0.177
+    },
+    {
+      "mean_predicted": 0.308,
+      "observed_freq": 0.253
+    },
+    {
+      "mean_predicted": 0.416,
+      "observed_freq": 0.371
+    },
+    {
+      "mean_predicted": 0.549,
+      "observed_freq": 0.486
+    },
+    {
+      "mean_predicted": 0.682,
+      "observed_freq": 0.566
+    },
+    {
+      "mean_predicted": 0.807,
+      "observed_freq": 0.711
+    },
+    {
+      "mean_predicted": 0.89,
+      "observed_freq": 0.816
+    },
+    {
+      "mean_predicted": 0.952,
+      "observed_freq": 0.914
+    }
+  ],
+  "best_iteration": 116,
+  "adopted": true
+}

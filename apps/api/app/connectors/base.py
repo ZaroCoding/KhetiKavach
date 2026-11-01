@@ -138,10 +138,6 @@ async def fetch_json(
     key = cache_key(source + cache_discriminator, url, params, json_body)
     shown = display_url(url, params)
     cached = await _cached(key)
-    now = datetime.now(UTC)
-    if cached and cached["expires_at"] > now:
-        return FetchResult(source, cached["response"], "cached", cached["fetched_at"], shown)
-
     if await is_disabled(source):
         if cached:
             return FetchResult(
@@ -154,6 +150,10 @@ async def fetch_json(
                 fell_back_to_cache=True,
             )
         raise SourceUnavailable(source, "disabled by admin (kill switch)")
+
+    now = datetime.now(UTC)
+    if cached and cached["expires_at"] > now:
+        return FetchResult(source, cached["response"], "cached", cached["fetched_at"], shown)
 
     last_error = ""
     for attempt in range(2):
@@ -207,8 +207,6 @@ async def fetch_computed(
     """
     key = cache_key(source, request_url, key_parts, None)
     cached = await _cached(key)
-    if cached and cached["expires_at"] > datetime.now(UTC):
-        return FetchResult(source, cached["response"], "cached", cached["fetched_at"], request_url)
     if await is_disabled(source):
         if cached:
             return FetchResult(
@@ -221,6 +219,8 @@ async def fetch_computed(
                 fell_back_to_cache=True,
             )
         raise SourceUnavailable(source, "disabled by admin (kill switch)")
+    if cached and cached["expires_at"] > datetime.now(UTC):
+        return FetchResult(source, cached["response"], "cached", cached["fetched_at"], request_url)
     last_error = ""
     for attempt in range(2):
         t0 = time.perf_counter()

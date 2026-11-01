@@ -30,8 +30,12 @@ async def main(args: argparse.Namespace) -> None:
     conn = await asyncpg.connect(db._dsn())
     await conn.execute("CREATE TEMP TABLE imd_stage (lat real, lon real, date date, mm real)")
     for year in range(args.start, args.end + 1):
-        imdlib.get_data("rain", year, year, fn_format="yearwise", file_dir=args.dir)
-        ds = imdlib.open_data("rain", year, year, "yearwise", args.dir).get_xarray()
+        try:
+            imdlib.get_data("rain", year, year, fn_format="yearwise", file_dir=args.dir)
+            ds = imdlib.open_data("rain", year, year, "yearwise", args.dir).get_xarray()
+        except Exception as exc:
+            print(f"{year}: not published yet by IMD ({exc}); skipping")
+            continue
         sub = ds["rain"].sel(lat=slice(lat0 - pad, lat1 + pad), lon=slice(lon0 - pad, lon1 + pad))
         frame = sub.to_dataframe().reset_index()
         frame = frame[frame["rain"] > -900]  # -999 = outside India / missing; never filled

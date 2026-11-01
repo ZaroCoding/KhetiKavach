@@ -111,7 +111,7 @@ export default function RiskCard({ a, s }: { a: Assessment; s: Strings }) {
           <b>Time Machine: real archived data as of {a.as_of}.</b>{" "}
           {a.replay_basis === "archived_forecast"
             ? "Uses the forecast actually issued that day (archived ECMWF run): a yes/no outcome."
-            : "No archived forecast exists for this date: risk comes from the LightGBM model on rain observed up to the day before, plus IMD climatology."}{" "}
+            : "No archived forecast exists for this date: risk comes from the LightGBM model on rain observed up to the day before, plus IMD climatology (evaluated; ensemble probabilities are the primary signal)."}{" "}
           What actually fell afterwards is overlaid for comparison only.
         </div>
       )}

@@ -61,3 +61,56 @@ async def test_fetch_timeout_is_unavailable() -> None:
     respx.get("https://example.test/slow").mock(side_effect=httpx.ReadTimeout("slow"))
     with pytest.raises(SourceUnavailable, match="ReadTimeout"):
         await fetch_json("nasa_power", "https://example.test/slow", timeout_s=1)
+
+
+@respx.mock
+async def test_disabled_source_with_cache_returns_admin_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("app.connectors.base.is_disabled", AsyncMock(return_value=True))
+    cached_payload = {
+        "response": {"result": "ok"},
+        "fetched_at": datetime.now(UTC),
+        "expires_at": datetime.now(UTC) + timedelta(days=1),
+    }
+    monkeypatch.setattr("app.connectors.base._cached", AsyncMock(return_value=cached_payload))
+    res = await fetch_json("nominatim", "https://example.test/nominatim", timeout_s=1)
+    assert res.status == "cached"
+    assert res.note == "source disabled by admin; serving last real response"
+    assert res.fell_back_to_cache is True
+    assert res.data == {"result": "ok"}
+
+
+@respx.mock
+async def test_disabled_source_without_cache_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("app.connectors.base.is_disabled", AsyncMock(return_value=True))
+    monkeypatch.setattr("app.connectors.base._cached", AsyncMock(return_value=None))
+    with pytest.raises(SourceUnavailable, match="disabled by admin"):
+        await fetch_json("nominatim", "https://example.test/nominatim", timeout_s=1)
+
+
+@respx.mock
+async def test_nominatim_boundary_category_parsed() -> None:
+    from app.connectors.nominatim import district_bbox
+
+    respx.get("https://nominatim.openstreetmap.org/search").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "display_name": "Ludhiana, Punjab, India",
+                    "category": "boundary",
+                    "type": "administrative",
+                    "boundingbox": ["30.5", "31.0", "75.3", "76.3"],
+                }
+            ],
+        )
+    )
+    bbox, res = await district_bbox("Ludhiana district, Punjab, India")
+    assert bbox == (75.3, 30.5, 76.3, 31.0)
+    assert res.status == "live"

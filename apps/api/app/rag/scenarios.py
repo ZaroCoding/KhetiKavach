@@ -20,7 +20,13 @@ SCENARIOS = {
 
 # Order matters: first match wins.
 HEADING_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("early_drought", re.compile(r"early\s+season\s+drought|delayed\s+onset", re.I)),
+    (
+        "early_drought",
+        re.compile(
+            r"early\s+season\s+drought|delayed\s+onset|drought\s*-\s*irrigated|delayed\s+release\s+of\s+water",
+            re.I,
+        ),
+    ),
     (
         "early_dry_spell",
         re.compile(r"normal\s+onset\s+followed|15\s*-?\s*20\s+days?\s+dry\s+spell", re.I),
@@ -29,11 +35,25 @@ HEADING_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("terminal_drought", re.compile(r"terminal\s+drought|early\s+withdrawal", re.I)),
     (
         "unseasonal_rain",
-        re.compile(r"un(usual|seasonal|timely)\s+rain|high\s+speed\s+winds?|untimely", re.I),
+        re.compile(
+            r"un(usual|seasonal|timely)\s+rain"
+            r"|heavy\s+rain(fall)?\s+with\s+high"
+            r"|high\s+speed\s+winds?|untimely",
+            re.I,
+        ),
     ),
     (
         "excess_rain",
-        re.compile(r"excess\s+rain|heavy\s+rain|flood|water\s*logging|inundation", re.I),
+        re.compile(
+            r"excess\s+rain"
+            r"|heavy\s+rain"
+            r"|flood"
+            r"|continuous\s+high\s+rain"
+            r"|(transient\s+)?water\s*logging"
+            r"|(partial\s+)?inundation"
+            r"|(continuous\s+)?submergence",
+            re.I,
+        ),
     ),
     ("heat_cold_hail", re.compile(r"heat\s+wave|cold\s+wave|frost|hail", re.I)),
     ("pest_disease", re.compile(r"pest|disease|outbreak", re.I)),

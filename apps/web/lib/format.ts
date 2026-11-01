@@ -13,7 +13,7 @@ export const METHOD_NOTE: Record<Risk["method"], string> = {
   ensemble: "share of ensemble members",
   multi_model: "agreement across independent models (not a calibrated probability)",
   deterministic_replay: "archived single forecast run: yes/no, not a probability",
-  model: "LightGBM on observed rain (no forecast existed for this date)",
+  model: "LightGBM on observed rain (evaluated; ensemble probabilities are the primary signal)",
   climatology: "climatological frequency only (no forecast for this date)",
 };
 

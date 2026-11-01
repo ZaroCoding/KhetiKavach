@@ -165,8 +165,8 @@ REASONS = {
 
 def chains_for(mode: str, month: int) -> dict[str, list[str]]:
     """The plan: which tools run, and in what fallback order."""
-    optical = ["s2_sentinel_hub", "s2_planetary"]
-    if get_settings().satellite_primary == "planetary_computer_s2":
+    optical = ["s2_planetary", "s2_sentinel_hub"]
+    if get_settings().satellite_primary == "sentinel_hub":
         optical.reverse()
     chains: dict[str, list[str]] = {"optical": optical, "climatology": ["climatology_imd"]}
     if mode == "live":
@@ -189,8 +189,6 @@ def chains_for(mode: str, month: int) -> dict[str, list[str]]:
             "antecedent": ["antecedent_era5", "recent_nasa"],
             "observed_after": ["observed_after"],
         }
-    if 6 <= month <= 9:
-        chains["radar"] = ["s1_planetary"]
     return chains
 
 

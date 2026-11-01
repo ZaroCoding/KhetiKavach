@@ -204,23 +204,28 @@ async def telegram_webhook(
     if not chat or not text.startswith("/start"):
         return {"ok": True}
     parts = text.split()
-    if len(parts) < 2:
-        await send_message(chat, messages.USAGE)
-        return {"ok": True}
-    lang = parts[2] if len(parts) > 2 and parts[2] in ("en", "hi", "pa") else "en"
-    field = await db.pool().fetchrow(
-        "SELECT id, COALESCE(name, short_code) AS name FROM fields WHERE short_code = $1",
-        parts[1].upper(),
-    )
-    if not field:
-        await send_message(chat, messages.NOT_FOUND)
-        return {"ok": True}
-    await db.pool().execute(
-        """INSERT INTO alert_subscriptions(field_id, telegram_chat_id, language) VALUES ($1, $2, $3)
-           ON CONFLICT (field_id, telegram_chat_id) DO UPDATE SET language = $3, active = true""",
-        field["id"],
-        chat,
-        lang,
-    )
-    await send_message(chat, messages.SUBSCRIBED.format(name=field["name"]))
+    try:
+        if len(parts) < 2:
+            await send_message(chat, messages.USAGE)
+            return {"ok": True}
+        lang = parts[2] if len(parts) > 2 and parts[2] in ("en", "hi", "pa") else "en"
+        field = await db.pool().fetchrow(
+            "SELECT id, COALESCE(name, short_code) AS name FROM fields WHERE short_code = $1",
+            parts[1].upper(),
+        )
+        if not field:
+            await send_message(chat, messages.NOT_FOUND)
+            return {"ok": True}
+        await db.pool().execute(
+            """INSERT INTO alert_subscriptions(field_id, telegram_chat_id, language)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (field_id, telegram_chat_id)
+               DO UPDATE SET language = $3, active = true""",
+            field["id"],
+            chat,
+            lang,
+        )
+        await send_message(chat, messages.SUBSCRIBED.format(name=field["name"]))
+    except Exception as exc:
+        log.warning("telegram webhook processing failed: %s", exc)
     return {"ok": True}

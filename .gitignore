@@ -26,3 +26,4 @@ next-env.d.ts
 
 # imdlib downloads
 apps/api/data/
+.neon

@@ -134,6 +134,23 @@ async def plan(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
     chains = chains_for(state["mode"], state["as_of"].month)
     if state["ctx"]["stage"] in ("pre_sowing", "past_maturity"):
         chains.pop("radar", None)
+    # Hardware sensor is optional: only planned if a device is registered (ARCHITECTURE.md line 87)
+    has_sensor = state.get("has_sensor")
+    if has_sensor is None:
+        try:
+            from app import db
+
+            if db.is_connected():
+                has_sensor = bool(
+                    await db.pool().fetchval(
+                        "SELECT 1 FROM sensor_devices WHERE field_id = $1::uuid LIMIT 1",
+                        state["field"]["id"],
+                    )
+                )
+        except Exception:
+            has_sensor = False
+    if not has_sensor:
+        chains.pop("sensor", None)
     await _trace(config).emit(
         "node_started",
         "plan",

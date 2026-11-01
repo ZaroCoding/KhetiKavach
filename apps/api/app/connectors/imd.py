@@ -65,6 +65,24 @@ async def window_climatology(
         years[0],
         years[1],
     )
+    if not rows:
+        min_max = await db.pool().fetchrow(
+            """SELECT MIN(EXTRACT(year FROM date))::int AS min_y,
+                      MAX(EXTRACT(year FROM date))::int AS max_y
+               FROM imd_rain_daily WHERE lat = $1 AND lon = $2""",
+            cell[0],
+            cell[1],
+        )
+        if min_max and min_max["min_y"] is not None and min_max["max_y"] is not None:
+            years = (int(min_max["min_y"]), int(min_max["max_y"]))
+            rows = await db.pool().fetch(
+                """SELECT date, mm FROM imd_rain_daily WHERE lat = $1 AND lon = $2
+                   AND EXTRACT(year FROM date) BETWEEN $3 AND $4""",
+                cell[0],
+                cell[1],
+                years[0],
+                years[1],
+            )
     by_date = {r["date"]: float(r["mm"]) for r in rows}
     totals: list[float] = []
     dry = heavy = harvest = 0

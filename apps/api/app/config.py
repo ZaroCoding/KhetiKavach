@@ -18,12 +18,12 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-flash-latest"
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
 
     # Multilingual embeddings on CPU (ONNX via fastembed), 384 dimensions.
     embed_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-    # Copernicus Data Space OAuth client for the Sentinel Hub Statistical API.
+    # Satellite: Sentinel Hub primary, Planetary Computer fallback (antigravity prompt #2)
     cdse_client_id: str = ""
     cdse_client_secret: str = ""
     satellite_primary: str = "sentinel_hub"  # or "planetary_computer_s2"
