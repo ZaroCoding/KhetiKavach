@@ -5,11 +5,10 @@ is small. Inside the filter, cosine-distance rank and Postgres full-text rank ar
 reciprocal rank fusion, which keeps exact crop and variety names that embeddings blur.
 """
 
-import asyncio
 from typing import Any
 
 from app import db
-from app.rag.embed import embed_one
+from app.rag.query_vectors import lookup
 
 SQL = """
 WITH cand AS (
@@ -43,15 +42,14 @@ FROM cand ORDER BY score DESC LIMIT $5
 async def retrieve(
     district_code: str, scenarios: list[str], crop: str, query: str, k: int = 4
 ) -> list[dict[str, Any]]:
-    try:
-        vec = await asyncio.get_running_loop().run_in_executor(None, embed_one, query)
+    vec = lookup(query)
+    if vec is not None:
         rows = await db.pool().fetch(SQL, vec, district_code, scenarios, f"%{crop}%", query, k)
         if not rows:  # still give cited guidance from the district's general sections
             rows = await db.pool().fetch(
                 SQL, vec, district_code, ["general", *scenarios], f"%{crop}%", query, k
             )
-    except Exception:
-        # Fall back to PostgreSQL full-text search if embedding fails under memory pressure
+    else:  # no precomputed vector for this query: full-text rank alone
         rows = await db.pool().fetch(SQL_KEYWORD, district_code, scenarios, f"%{crop}%", query, k)
         if not rows:
             rows = await db.pool().fetch(

@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     model_path: str = "models/dryspell_lgbm.joblib"
     model_metrics_path: str = "models/dryspell_metrics.json"
+    query_vectors_path: str = "models/query_vectors.npz"
 
     @property
     def cors_origin_list(self) -> list[str]:

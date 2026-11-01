@@ -33,7 +33,7 @@ from app.connectors.base import (
 )
 
 log = logging.getLogger("satellite")
-_pool = ThreadPoolExecutor(max_workers=8)
+_pool = ThreadPoolExecutor(max_workers=3)  # each worker holds raster windows in a 512 MB API
 Obs = dict[str, Any]
 
 # SCL classes treated as unusable: 0 no data, 1 saturated, 3 cloud shadow, 8/9 cloud, 10 cirrus,
@@ -322,9 +322,12 @@ async def s2_planetary(
 
     tasks = [asyncio.create_task(season(s, e)) for s, e in windows]
     budget = get_settings().imagery_timeout_s * 4
-    done, pending = await asyncio.wait(tasks, timeout=budget) if tasks else (set(), set())
-    for task in pending:
-        task.cancel()
+    try:
+        done, pending = await asyncio.wait(tasks, timeout=budget) if tasks else (set(), set())
+    finally:  # also when the agent's tool timeout cancels this call
+        for task in tasks:
+            if not task.done():
+                task.cancel()
     series: list[Obs] = list(current.data)
     missing = len(pending)
     for task in done:

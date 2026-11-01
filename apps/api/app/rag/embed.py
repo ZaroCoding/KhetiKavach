@@ -1,7 +1,7 @@
 """Multilingual sentence embeddings on CPU via fastembed (ONNX runtime, no torch), 384 dims.
 
-The model downloads on first use; the API Dockerfile bakes it into the image so a cold start
-never fetches it during the demo.
+For offline scripts only (plan ingestion, query vectors): loading the model takes more memory than
+the API has, so the API reads precomputed vectors from `app/rag/query_vectors.py` instead.
 """
 
 from functools import lru_cache
@@ -25,7 +25,3 @@ def _model() -> Any:
 
 def embed(texts: list[str]) -> list[np.ndarray[Any, Any]]:
     return [np.asarray(v, dtype=np.float32) for v in _model().embed(texts)]
-
-
-def embed_one(text: str) -> np.ndarray[Any, Any]:
-    return embed([text])[0]

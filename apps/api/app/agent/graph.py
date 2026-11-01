@@ -27,6 +27,7 @@ from app.connectors.llm import draft_plan
 from app.connectors.open_meteo import SINGLE_RUNS_FIRST_DATE
 from app.connectors.satellite import optical_summary, season_points
 from app.rag import rulebased
+from app.rag.query_vectors import query_text
 from app.rag.retriever import retrieve as rag_retrieve
 from app.rag.scenarios import scenarios_for_risk
 from app.rag.verifier import verify_plan
@@ -46,6 +47,16 @@ from app.schemas import Citation, MemberCount, Members, PlanAction, Risk, Thresh
 
 MAX_GATHER_LOOPS = 2
 MAX_DRAFTS = 3
+# Time limits. A slow tool costs its input, not the run: the gate moves to the next source. A run
+# past the soft budget gets the cited rule-based plan instead of another LLM call; the hard deadline
+# is the last resort, and a run still going then is reported as failed.
+TOOL_TIMEOUT_S = 35.0
+SOFT_BUDGET_S = 75.0
+RUN_DEADLINE_S = 150.0
+# These read raster windows into memory, so only one runs at a time. The rest are small JSON calls.
+RASTER_TOOLS = {"s1_planetary", "s2_planetary"}
+# Runs allowed at once in a 512 MB API; the others stay queued, which the client can see.
+_RUN_SLOTS = asyncio.Semaphore(2)
 SEVERITY_ORDER = {"unknown": -1, "low": 0, "moderate": 1, "high": 2, "severe": 3}
 
 
@@ -178,7 +189,7 @@ async def gather(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         source = TOOL_SOURCE[tool]
         t0 = time.perf_counter()
         try:
-            out: ToolOutput = await registry[tool](state["ctx"])
+            out: ToolOutput = await asyncio.wait_for(registry[tool](state["ctx"]), TOOL_TIMEOUT_S)
             ms = int((time.perf_counter() - t0) * 1000)
             results[group] = {
                 "status": "ok",
@@ -201,7 +212,8 @@ async def gather(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             )
         except Exception as exc:
             ms = int((time.perf_counter() - t0) * 1000)
-            error = f"{type(exc).__name__}: {exc}"[:300]
+            reason = str(exc) or f"no answer within {TOOL_TIMEOUT_S:.0f} s"
+            error = f"{type(exc).__name__}: {reason}"[:300]
             results[group] = {"status": "error", "tool": tool, "error": error}
             await trace.emit(
                 "tool_result",
@@ -212,10 +224,13 @@ async def gather(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
                 detail={"source": source, "error": error},
             )
 
-    sem = asyncio.Semaphore(2)
+    raster_slot = asyncio.Semaphore(1)
 
     async def bounded_run(g: str) -> None:
-        async with sem:
+        if state["chains"][g][state["source_idx"][g]] in RASTER_TOOLS:
+            async with raster_slot:
+                await run(g)
+        else:
             await run(g)
 
     await asyncio.gather(*(bounded_run(g) for g in state["to_run"]))
@@ -473,7 +488,8 @@ async def assess(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         info = stage_on(f["crop"], f["sowing_date"], as_of)
         weight = min(1.0, info.stage.drought_ky) if info.stage else 0.0
         try:
-            p, model_version = dry_model.predict(feats)
+            # In a thread: the first call imports LightGBM, which would freeze the whole API.
+            p, model_version = await asyncio.to_thread(dry_model.predict, feats)
             rid = book.value("model_p_dry_spell", round(p, 3), "fraction", "imd_gridded", None)
             r30 = book.value("imd_rain_30d", round(feats["rain_30d"], 1), "mm", "imd_gridded", None)
             risks.append(
@@ -565,7 +581,6 @@ async def assess(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             ],
         },
     )
-    gc.collect()
     return {"book": book, "risks": risks, "model_version": model_version}
 
 
@@ -656,7 +671,7 @@ async def retrieve(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
     seen: set[str] = set()
     for r in targets[:2]:
         scenarios = scenarios_for_risk(r.hazard, r.crop_stage.split(",")[0].strip(), ctx["das"])
-        query = f"{f['crop']} {r.hazard.replace('_', ' ')} {r.crop_stage} contingency measures"
+        query = query_text(f["crop"], r.hazard, r.crop_stage)
         try:
             for p in await retr(f["district_code"], scenarios, f["crop"], query, 4):
                 if p["id"] not in seen:
@@ -680,7 +695,6 @@ async def retrieve(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             ],
         },
     )
-    gc.collect()
     return {"passages": passages}
 
 
@@ -689,6 +703,18 @@ async def draft(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
     drafter = _deps(config).get("draft") or draft_plan
     attempt = state.get("draft_attempts", 0) + 1
     if not state["passages"]:
+        return {"draft": None, "draft_attempts": MAX_DRAFTS}
+    if trace.elapsed_ms() > SOFT_BUDGET_S * 1000:
+        await trace.emit(
+            "gate_failed",
+            "draft",
+            tool="llm",
+            detail={
+                "check": "error",
+                "reason": f"run passed its {SOFT_BUDGET_S:.0f} s budget: quoting the plan directly",
+                "action": "rule_based",
+            },
+        )
         return {"draft": None, "draft_attempts": MAX_DRAFTS}
     feedback = [f"{item}: {reason}" for item, reason in state.get("problems", [])] or None
     t0 = time.perf_counter()
@@ -708,7 +734,6 @@ async def draft(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             latency_ms=int((time.perf_counter() - t0) * 1000),
             detail={"message": f"draft {attempt} from {provider}", "actions": len(plan_.actions)},
         )
-        gc.collect()
         return {"draft": plan_, "draft_attempts": attempt}
     except Exception as exc:
         await trace.emit(
@@ -718,7 +743,6 @@ async def draft(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             latency_ms=int((time.perf_counter() - t0) * 1000),
             detail={"check": "error", "reason": str(exc)[:300], "action": "rule_based"},
         )
-        gc.collect()
         return {"draft": None, "draft_attempts": MAX_DRAFTS}
 
 
@@ -764,7 +788,6 @@ async def rule_based(state: AgentState, config: RunnableConfig) -> dict[str, Any
         status="succeeded",
         detail={"message": f"{len(plan_)} actions quoted from the contingency plan"},
     )
-    gc.collect()
     return {
         "plan": plan_,
         "plan_summary": None,
@@ -938,28 +961,35 @@ async def run_assessment(
         "language": language,
     }
     mark = deps.get("mark_running", mark_running)
-    await mark(assessment_id)
-    try:
-        result: dict[str, Any] = await GRAPH.ainvoke(
-            state, config={"configurable": {"trace": trace, "deps": deps}, "recursion_limit": 40}
-        )
-        return result
-    except Exception as exc:
-        await trace.emit(
-            "error", "agent", detail={"code": type(exc).__name__, "message": str(exc)[:400]}
-        )
-        fail = deps.get("persist_failure", mark_failed)
-        await fail(assessment_id, str(exc))
-        await trace.emit(
-            "done",
-            "finalize",
-            detail={
-                "status": "failed",
-                "result_url": f"/api/assessments/{assessment_id}",
-                "duration_ms": trace.elapsed_ms(),
-                "degraded": False,
-            },
-        )
-        if isinstance(exc, SourceUnavailable):
-            return {"status": "failed"}
-        raise
+    async with _RUN_SLOTS:
+        trace.restart_clock()
+        await mark(assessment_id)
+        try:
+            result: dict[str, Any] = await asyncio.wait_for(
+                GRAPH.ainvoke(
+                    state,
+                    config={"configurable": {"trace": trace, "deps": deps}, "recursion_limit": 40},
+                ),
+                RUN_DEADLINE_S,
+            )
+            return result
+        except Exception as exc:
+            message = str(exc) or f"the run did not finish within {RUN_DEADLINE_S:.0f} s"
+            await trace.emit(
+                "error", "agent", detail={"code": type(exc).__name__, "message": message[:400]}
+            )
+            fail = deps.get("persist_failure", mark_failed)
+            await fail(assessment_id, message)
+            await trace.emit(
+                "done",
+                "finalize",
+                detail={
+                    "status": "failed",
+                    "result_url": f"/api/assessments/{assessment_id}",
+                    "duration_ms": trace.elapsed_ms(),
+                    "degraded": False,
+                },
+            )
+            if isinstance(exc, SourceUnavailable | TimeoutError):
+                return {"status": "failed"}
+            raise

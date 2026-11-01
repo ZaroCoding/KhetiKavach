@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.config import get_settings
 from app.db import DatabaseUnavailable
 
 log = logging.getLogger("errors")
@@ -57,6 +58,20 @@ def envelope(
     return JSONResponse(status_code=status, content=body, headers=headers)
 
 
+def _cors_headers(request: Request) -> dict[str, str]:
+    """The catch-all handler runs outside CORSMiddleware. Without these headers a browser reports a
+    server error as "Failed to fetch" and the page never sees the envelope."""
+    origin = request.headers.get("origin")
+    allowed = get_settings().cors_origin_list
+    if not origin:
+        return {}
+    if "*" in allowed:
+        return {"access-control-allow-origin": "*"}
+    if origin in allowed:
+        return {"access-control-allow-origin": origin, "vary": "Origin"}
+    return {}
+
+
 def install(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
@@ -82,9 +97,12 @@ def install(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+        headers = _cors_headers(request)
         # Log the type and route only: exception text can carry a URL with a token in it.
         if isinstance(exc, DB_UNAVAILABLE):
             log.warning("database unreachable during %s %s", request.method, request.url.path)
-            return envelope(503, "UPSTREAM_UNAVAILABLE", "database unavailable; retry shortly")
+            return envelope(
+                503, "UPSTREAM_UNAVAILABLE", "database unavailable; retry shortly", headers=headers
+            )
         log.error("unhandled %s during %s %s", type(exc).__name__, request.method, request.url.path)
-        return envelope(500, "INTERNAL_ERROR", "internal server error")
+        return envelope(500, "INTERNAL_ERROR", "internal server error", headers=headers)

@@ -39,7 +39,9 @@ API (run from `apps/api`):
 - Migrations: `uv run alembic upgrade head`; new: `uv run alembic revision -m "msg"` (write SQL by hand)
 - Data: `uv run --group data python -m scripts.load_imd --district PB_LUDHIANA`,
   `uv run python -m scripts.ingest_crida --district PB_LUDHIANA` (`--dry-run` to preview),
-  `uv run python -m scripts.train_dryspell`
+  `uv run python -m scripts.train_dryspell`,
+  `uv run python -m scripts.build_query_vectors` (the Docker build runs this; run it locally for
+  vector retrieval in dev, otherwise retrieval uses full-text only)
 
 Web (run from `apps/web`):
 - Install: `pnpm install`

@@ -7,6 +7,7 @@ numbers from the evidence block. The deterministic verifier checks what it wrote
 
 import hashlib
 import json
+import time
 from datetime import date
 from typing import Any
 
@@ -16,6 +17,14 @@ from app.config import get_settings
 from app.connectors.base import SourceUnavailable, client, fetch_computed
 
 LANG_NAMES = {"en": "English", "hi": "Hindi (Devanagari script)", "pa": "Punjabi (Gurmukhi script)"}
+
+# A provider out of quota fails every call: do not spend each run's time asking it again. The last
+# provider in the chain is always tried, since skipping it would leave nothing to ask.
+_COOLDOWN_S = 600.0
+_skip_until: dict[str, float] = {}
+# Seconds per provider for one draft. Gemini's Flash alias was measured at 70-160 s under load
+# (2026-11-01) while Groq answered in 4 s, so Gemini gets the shorter budget.
+BUDGET_S = {"gemini": 15.0, "groq": 25.0}
 
 
 class DraftAction(BaseModel):
@@ -136,10 +145,11 @@ async def draft_plan(
     prompt = build_prompt(field, risks, evidence, passages, feedback)
     digest = hashlib.sha256((system + prompt).encode()).hexdigest()
     errors: list[str] = []
-    # One attempt each: the other provider is the retry. Gemini's Flash alias was measured at
-    # 70-160 s under load (2026-11-01) while Groq answered in 4 s: Gemini gets the shorter budget.
-    budget = {"gemini": 25.0, "groq": 30.0}
+    # One attempt each: the other provider is the retry.
     for source, fn in (("gemini", _gemini), ("groq", _groq)):
+        if source != "groq" and _skip_until.get(source, 0.0) > time.monotonic():
+            errors.append(f"{source}: skipped, it failed within the last {_COOLDOWN_S:.0f} s")
+            continue
 
         async def call(fn: Any = fn) -> dict[str, Any]:
             result: dict[str, Any] = await fn(system, prompt)
@@ -151,11 +161,12 @@ async def draft_plan(
                 {"prompt_sha256": digest},
                 call,
                 ttl_s=6 * 3600,
-                timeout_s=budget[source],
+                timeout_s=BUDGET_S[source],
                 request_url=f"{source}:generateContent",
                 attempts=1,
             )
             return DraftPlan.model_validate(res.data), source
         except SourceUnavailable as exc:
             errors.append(f"{source}: {exc.reason}")
+            _skip_until[source] = time.monotonic() + _COOLDOWN_S
     raise SourceUnavailable("gemini", "; ".join(errors))

@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
 from app import db, errors
+from app.agent.persist import reap_stale_runs
 from app.config import get_settings
 from app.routers import assessments, districts, fields, health, ops
 
@@ -39,6 +40,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logging.basicConfig(level=get_settings().log_level, handlers=[handler], force=True)
     quiet_http_loggers()
     await db.init_pool()
+    await reap_stale_runs()
     yield
     await db.close_pool()
 

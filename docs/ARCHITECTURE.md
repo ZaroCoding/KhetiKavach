@@ -106,7 +106,11 @@ fans its step events to the stream.
 quality gate with fallback loop, risk assessment, retrieval, drafting, verification, and
 persistence. It owns control flow only; data comes from connectors, numbers from the risk
 engine, passages from the retriever. Retries and fallbacks are explicit graph edges so they show
-up in the trace.
+up in the trace. Time and memory are bounded for a 512 MB host: two runs at once (others queue), one
+raster tool at a time, 35 s per tool, a 75 s budget after which the plan is quoted without another LLM
+call, and a 150 s hard deadline. Trace rows are written in order by a background task so no step
+waits on the database. Runs left unfinished by a dead process are closed by `reap_stale_runs`
+(`app/agent/persist.py`) at start-up and from the SSE stream.
 
 **Risk engine.** Deterministic code that turns evidence into probabilities: the share of the 51
 ECMWF (plus 31 GFS) ensemble members exceeding a crop-relevant threshold for dry spell and heavy
@@ -117,7 +121,10 @@ filling a value. Outputs yield-risk exposure, not tonnes per hectare.
 **Retriever + verifier.** CRIDA plans are extracted with PyMuPDF and split at scenario headings,
 so each chunk belongs to one contingency scenario. Retrieval filters by district, scenario and
 crop, then fuses pgvector cosine rank (paraphrase-multilingual-MiniLM-L12-v2 via fastembed,
-384-dim, CPU) with Postgres full-text rank. Gemini Flash (Groq backup) drafts a JSON-schema plan
+384-dim, CPU) with Postgres full-text rank. The API never loads the embedding model, which does not
+fit in 512 MB: `scripts/build_query_vectors.py` embeds every possible agent query at image build, and
+a query outside that file uses full-text rank alone. Gemini Flash (Groq backup; Gemini is skipped for
+10 minutes after a failure) drafts a JSON-schema plan
 whose actions cite chunk ids. The deterministic verifier normalises Hindi/Punjabi digits, rejects
 any number not in the evidence or the cited passage, any date outside the forecast window and any
 missing citation, forcing up to two redrafts (three drafts total), then falls back to a

@@ -355,7 +355,9 @@ StepData mirrors the `agent_steps` columns:
   "latency_ms": "<integer | null>", "detail": "<object>" }
 ```
 After an `error` event a `done` with `status: "failed"` always follows [R-4]. `degraded` is true iff
-`status` is `completed_degraded`.
+`status` is `completed_degraded`. A run whose server process died gets the same pair once it has been
+silent for 90 s (`error.code` = `RunInterrupted`), so a stream never waits forever. On reconnect the
+browser replays from the start and drops any `seq` it has already seen.
 
 ## Database tables
 

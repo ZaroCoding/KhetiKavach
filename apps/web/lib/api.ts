@@ -45,30 +45,87 @@ function isErrorBody(body: unknown): body is ApiErrorBody {
   return typeof body === "object" && body !== null && "error" in body;
 }
 
-function handleFetchError(err: unknown, base: string, path: string): never {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("network")) {
-    throw new ApiError(
-      `Cannot reach API at ${base}${path} (${msg}). Check that your backend is running on HTTPS and CORS allows this domain.`,
-      0,
-      "NETWORK_ERROR",
-    );
-  }
-  throw err;
+const ATTEMPT_TIMEOUT_MS = 20_000;
+/** Waits between attempts, about 30 s in all: long enough for the API to restart after a redeploy. */
+const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+
+type Sleep = (ms: number) => Promise<void>;
+const sleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The browser reports a refused connection, a timeout and a response without CORS headers alike. */
+function unreachable(): ApiError {
+  return new ApiError(
+    "The KhetKavach API is not answering right now. It may be restarting, so please try again in a minute.",
+    0,
+    "NETWORK_ERROR",
+  );
 }
 
-async function request<T>(path: string, init?: RequestInit, fetchImpl: typeof fetch = fetch): Promise<T> {
-  const base = apiBaseUrl();
-  let response: Response;
+function isNetworkFailure(err: unknown): boolean {
+  return err instanceof TypeError || (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError"));
+}
+
+/** GET with retries: safe to repeat, and it hides a restart of the API from the reader. */
+async function getWithRetry(
+  url: string,
+  init: RequestInit,
+  fetchImpl: typeof fetch,
+  wait: Sleep,
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    let failure: unknown;
+    try {
+      const response = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS) });
+      if (!RETRYABLE_STATUS.has(response.status) || attempt >= RETRY_DELAYS_MS.length) return response;
+    } catch (err) {
+      if (!isNetworkFailure(err)) throw err;
+      failure = err;
+    }
+    if (attempt >= RETRY_DELAYS_MS.length) throw failure instanceof Error ? unreachable() : failure;
+    await wait(RETRY_DELAYS_MS[attempt]);
+  }
+}
+
+async function send(
+  url: string,
+  init: RequestInit,
+  fetchImpl: typeof fetch,
+  wait: Sleep,
+): Promise<Response> {
+  const method = (init.method ?? "GET").toUpperCase();
+  if (method === "GET") return getWithRetry(url, init, fetchImpl, wait);
   try {
-    response = await fetchImpl(`${base}${path}`, {
+    return await fetchImpl(url, init);
+  } catch (err) {
+    if (!isNetworkFailure(err)) throw err;
+  }
+  // The write probably never arrived. Wait until the API answers, then send it once more.
+  await fetchHealth(fetchImpl, wait);
+  try {
+    return await fetchImpl(url, init);
+  } catch (err) {
+    if (!isNetworkFailure(err)) throw err;
+    throw unreachable();
+  }
+}
+
+export async function request<T>(
+  path: string,
+  init?: RequestInit,
+  fetchImpl: typeof fetch = fetch,
+  wait: Sleep = sleep,
+): Promise<T> {
+  const response = await send(
+    `${apiBaseUrl()}${path}`,
+    {
       cache: "no-store",
       ...init,
       headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
-    });
-  } catch (err) {
-    handleFetchError(err, base, path);
-  }
+    },
+    fetchImpl,
+    wait,
+  );
   if (!response.ok) {
     let message = `API ${path} returned HTTP ${response.status}`;
     let code = "ERROR";
@@ -86,24 +143,12 @@ async function request<T>(path: string, init?: RequestInit, fetchImpl: typeof fe
   return (await response.json()) as T;
 }
 
-export async function fetchHealth(fetchImpl: typeof fetch = fetch): Promise<Health> {
-  const base = apiBaseUrl();
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const response = await fetchImpl(`${base}/health`, { cache: "no-store" });
-      if (!response.ok) {
-        throw new ApiError(`API /health returned HTTP ${response.status}`, response.status);
-      }
-      return (await response.json()) as Health;
-    } catch (err) {
-      lastErr = err;
-      if (attempt < 2) {
-        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
-      }
-    }
+export async function fetchHealth(fetchImpl: typeof fetch = fetch, wait: Sleep = sleep): Promise<Health> {
+  const response = await getWithRetry(`${apiBaseUrl()}/health`, { cache: "no-store" }, fetchImpl, wait);
+  if (!response.ok) {
+    throw new ApiError(`API /health returned HTTP ${response.status}`, response.status);
   }
-  return handleFetchError(lastErr, base, "/health");
+  return (await response.json()) as Health;
 }
 
 export const api = {
@@ -152,21 +197,63 @@ export function parseTraceEvent(data: string): TraceEvent {
   return parsed as TraceEvent;
 }
 
-/** Subscribe to the agent trace. EventSource reconnects with Last-Event-ID, so nothing is lost. */
+const STREAM_RECONNECT_MS = 3_000;
+/** Longer than any silence in a healthy run. Past this, onDone lets the caller read the real status. */
+const STREAM_STALL_MS = 200_000;
+
+/**
+ * Subscribe to the agent trace; onDone runs exactly once. EventSource reconnects by itself after a
+ * dropped connection but gives up for good on an HTTP error, as during an API restart, so that case
+ * opens a new stream. A new stream replays from the start, and events already seen are dropped.
+ */
 export function streamTrace(
   assessmentId: string,
   onEvent: (e: TraceEvent) => void,
   onDone: () => void,
 ): () => void {
-  const source = new EventSource(`${apiBaseUrl()}/api/assessments/${assessmentId}/stream`);
+  const url = `${apiBaseUrl()}/api/assessments/${assessmentId}/stream`;
+  let source: EventSource | null = null;
+  let lastSeq = 0;
+  let stopped = false;
+  let reconnect: ReturnType<typeof setTimeout> | undefined;
+  let stall: ReturnType<typeof setTimeout> | undefined;
+
+  const stop = () => {
+    stopped = true;
+    clearTimeout(reconnect);
+    clearTimeout(stall);
+    source?.close();
+  };
+  const finish = () => {
+    stop();
+    onDone();
+  };
+  const watchForStall = () => {
+    clearTimeout(stall);
+    stall = setTimeout(finish, STREAM_STALL_MS);
+  };
   const handler = (message: MessageEvent<string>) => {
     const event = parseTraceEvent(message.data);
+    if (event.seq <= lastSeq) return;
+    lastSeq = event.seq;
     onEvent(event);
-    if (event.event === "done") {
-      source.close();
-      onDone();
-    }
+    watchForStall();
+    if (event.event === "done") finish();
   };
-  EVENTS.forEach((name) => source.addEventListener(name, handler as EventListener));
-  return () => source.close();
+  const open = () => {
+    if (stopped) return;
+    const current = new EventSource(url);
+    source = current;
+    EVENTS.forEach((name) => current.addEventListener(name, handler as EventListener));
+    current.onerror = () => {
+      if (current.readyState === EventSource.CLOSED) {
+        clearTimeout(reconnect);
+        reconnect = setTimeout(open, STREAM_RECONNECT_MS);
+      }
+    };
+  };
+
+  watchForStall();
+  open();
+  return stop;
 }

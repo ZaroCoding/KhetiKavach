@@ -137,8 +137,8 @@ async def fetch_json(
 ) -> FetchResult:
     key = cache_key(source + cache_discriminator, url, params, json_body)
     shown = display_url(url, params)
-    cached = await _cached(key)
-    if await is_disabled(source):
+    cached, disabled = await asyncio.gather(_cached(key), is_disabled(source))
+    if disabled:
         if cached:
             return FetchResult(
                 source,
@@ -169,8 +169,9 @@ async def fetch_json(
                 )
             resp.raise_for_status()
             payload = resp.json()
-            await record_health(source, True, latency)
-            await _store(key, source, payload, ttl_s)
+            await asyncio.gather(
+                record_health(source, True, latency), _store(key, source, payload, ttl_s)
+            )
             return FetchResult(source, payload, "live", datetime.now(UTC), shown)
         except Exception as exc:  # timeout, HTTP error, invalid JSON
             latency = int((time.perf_counter() - t0) * 1000)
@@ -208,8 +209,8 @@ async def fetch_computed(
     `attempts=1` skips the retry, for callers that already have a named fallback source to move to.
     """
     key = cache_key(source, request_url, key_parts, None)
-    cached = await _cached(key)
-    if await is_disabled(source):
+    cached, disabled = await asyncio.gather(_cached(key), is_disabled(source))
+    if disabled:
         if cached:
             return FetchResult(
                 source,
@@ -228,8 +229,10 @@ async def fetch_computed(
         t0 = time.perf_counter()
         try:
             data = await asyncio.wait_for(fn(), timeout=timeout_s)
-            await record_health(source, True, int((time.perf_counter() - t0) * 1000))
-            await _store(key, source, data, ttl_s)
+            await asyncio.gather(
+                record_health(source, True, int((time.perf_counter() - t0) * 1000)),
+                _store(key, source, data, ttl_s),
+            )
             return FetchResult(source, data, "live", datetime.now(UTC), request_url)
         except Exception as exc:
             last_error = f"{type(exc).__name__}: {exc}"[:300]

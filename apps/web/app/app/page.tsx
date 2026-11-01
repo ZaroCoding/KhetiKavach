@@ -67,6 +67,7 @@ export default function Workspace() {
   const [events, setEvents] = useState<TraceEvent[]>([]);
   const [running, setRunning] = useState(false);
   const [loadingResult, setLoadingResult] = useState(false);
+  const [runFailed, setRunFailed] = useState(false);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [panel, setPanel] = useState<PanelId>("fields");
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -109,6 +110,7 @@ export default function Workspace() {
     stop.current?.();
     setEvents([]);
     setAssessment(null);
+    setRunFailed(false);
     setRunning(true);
     setSheetOpen(false);
     try {
@@ -121,6 +123,10 @@ export default function Workspace() {
           setLoadingResult(true);
           try {
             const result = await api.getAssessment(assessment_id);
+            if (result.status !== "completed" && result.status !== "completed_degraded") {
+              setRunFailed(true);
+              return;
+            }
             setAssessment(result);
             const top = headline(result.risks);
             if (top && result.mode === "live") setLevels((prev) => ({ ...prev, [field.id]: top.severity }));
@@ -173,7 +179,18 @@ export default function Workspace() {
 
   const resultsBody = (
     <div ref={results} className="scroll-mt-3">
-      {assessment ? <RiskCard a={assessment} s={s} /> : running || loadingResult ? <ResultsSkeleton /> : null}
+      {assessment ? (
+        <RiskCard a={assessment} s={s} />
+      ) : running || loadingResult ? (
+        <ResultsSkeleton />
+      ) : runFailed ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
+          <p>This assessment did not finish, so there is no result to show. The trace says what happened.</p>
+          <Button size="sm" variant="outline" onClick={assess}>
+            Run it again
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 

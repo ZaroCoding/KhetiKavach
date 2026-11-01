@@ -28,6 +28,8 @@ next-env.d.ts
 
 # imdlib downloads
 apps/api/data/
+# built into the image by scripts/build_query_vectors.py
+apps/api/models/query_vectors.npz
 .neon
 
 # local-only material (screenshots are regenerated into docs/img)

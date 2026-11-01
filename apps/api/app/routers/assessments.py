@@ -15,6 +15,7 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from app import db
 from app.agent.graph import run_assessment
+from app.agent.persist import reap_stale_runs
 from app.agent.tools import today_utc
 from app.errors import ApiError, validation_error
 from app.ratelimit import rate_limit
@@ -180,9 +181,11 @@ async def stream(aid: str, request: Request) -> EventSourceResponse:
                 if row["event"] == "done":
                     return
             idle = 0 if rows else idle + 1
-            if idle > 900:  # ~4.5 minutes without progress
+            if idle > 270:  # 4.5 minutes without progress
                 return
-            await asyncio.sleep(0.3)
+            if idle and idle % 15 == 0:  # the next poll streams any closing events this writes
+                await reap_stale_runs(aid)
+            await asyncio.sleep(1.0)
 
     return EventSourceResponse(
         events(), ping=15, ping_message_factory=lambda: ServerSentEvent(comment="keep-alive")
