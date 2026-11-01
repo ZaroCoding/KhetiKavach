@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node -e \"const fs=require('fs'); if(fs.existsSync('out')&&!fs.existsSync('apps/web/out')){fs.mkdirSync('apps/web',{recursive:true}); fs.cpSync('out','apps/web/out',{recursive:true});}\"",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

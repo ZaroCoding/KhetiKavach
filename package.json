@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@12.16.1",
   "scripts": {
-    "build": "cd apps/web && npx pnpm install && npx pnpm build",
+    "build": "cd apps/web && npx pnpm install && npx pnpm build && node -e \"const fs=require('fs'); if(fs.existsSync('apps/web/out')&&!fs.existsSync('out')){fs.cpSync('apps/web/out','out',{recursive:true});}\"",
     "deploy": "wrangler deploy"
   }
 }

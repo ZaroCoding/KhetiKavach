@@ -9,7 +9,6 @@ const CLIPS = path.join(__dirname, "clips");
 const CARDS = path.join(__dirname, "cards");
 const SCENES = Object.fromEntries(JSON.parse(fs.readFileSync(path.join(__dirname, "scenes.json"), "utf8")).scenes.map((s) => [s.n, s]));
 const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-const LIVE = "https://climateproblem.pages.dev/";
 const REPO = "https://github.com/ZaroCoding/KhetiKavach";
 
 const shell = (title, body) => `<!doctype html><meta charset="utf-8"><style>
@@ -38,8 +37,7 @@ const closing = () => {
   const img = fs.readFileSync(path.join(CARDS, "architecture.png")).toString("base64");
   return `<div style="height:1080px;display:flex;flex-direction:column;align-items:center;padding:26px 60px 0">
 <img src="data:image/png;base64,${img}" style="max-width:1800px;height:800px;object-fit:contain">
-<div style="font-size:36px;font-weight:700;color:#2f5d3a;margin-top:18px">${LIVE}</div>
-<div style="font-size:30px;margin-top:6px">${REPO}</div></div>`;
+<div style="font-size:36px;font-weight:700;color:#2f5d3a;margin-top:18px">${REPO}</div></div>`;
 };
 
 (async () => {
