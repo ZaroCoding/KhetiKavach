@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from app import db, errors
 from app.config import get_settings
@@ -57,3 +58,8 @@ app.include_router(districts.router)
 app.include_router(fields.router)
 app.include_router(assessments.router)
 app.include_router(ops.router)
+
+
+@app.get("/", include_in_schema=False)
+async def root() -> RedirectResponse:
+    return RedirectResponse(url="/docs")
