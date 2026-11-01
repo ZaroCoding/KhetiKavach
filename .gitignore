@@ -1,10 +1,12 @@
-﻿# secrets
+# secrets
 .env
 .env.*
 !.env.example
+secrets.h
 
 # data
 data/raw/
+layout-component-library/
 
 # python
 .venv/
