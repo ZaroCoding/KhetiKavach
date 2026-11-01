@@ -26,7 +26,7 @@ const title = () => `<div style="height:1080px;display:flex;flex-direction:colum
 
 function alertCard() {
   const a = JSON.parse(fs.readFileSync(path.join(__dirname, "alert.json"), "utf8"));
-  const html = esc(a.text).replace(/&lt;(\/?)(b|i)>/g, "<$1$2>").replace(/\n/g, "<br>");
+  const html = a.text.replace(/\n/g, "<br>"); // already Telegram HTML: the formatter escapes its values
   return `<div style="height:1080px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 170px">
 <div style="font-size:30px;font-weight:700;color:#6b5d48;margin-bottom:26px">Telegram alert text for this field, in Hindi</div>
 <div style="background:#fff;border:1px solid #dcd3c3;border-radius:18px;padding:38px 46px;font-size:29px;line-height:1.45;width:100%">${html}</div>
