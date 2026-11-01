@@ -481,7 +481,9 @@ It runs on free tiers: Cloud Run, Neon, Vercel, Gemini, Open-Meteo and Planetary
 
 | Name | Role |
 |---|---|
-| TODO | TODO |
+| Chand Aalam| Leader |
+| Siddharth Verma | Member |
+| Babul Pradhan | Member |
 
 Thanks to ICAR-CRIDA, IMD, ESA/Copernicus, ECMWF and Open-Meteo, NASA POWER, Microsoft Planetary Computer and OpenStreetMap contributors.
 
