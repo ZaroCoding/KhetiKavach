@@ -127,12 +127,25 @@ def estimate_hazards(
     rain_w = max(0.5, max(s.rain_sens for s in stages))
     out: list[HazardEstimate] = []
 
-    runs = np.array([longest_dry_run(fc.members[m]) for m in range(n_members)])
+    # A member with fewer than DRY_SPELL_DAYS valid days can never show the event, so counting it
+    # would drag the probability down (the multi-model fallback has models ending at 7 or 9 days).
+    covered = [
+        m for m in range(n_members) if int((~np.isnan(fc.members[m])).sum()) >= DRY_SPELL_DAYS
+    ]
+    runs = np.array([longest_dry_run(fc.members[m]) for m in covered])
+    dry_notes = (
+        [f"Median longest dry run across members: {int(np.median(runs))} days"] if covered else []
+    )
+    if len(covered) < n_members:
+        dry_notes.append(
+            f"{n_members - len(covered)} of {n_members} members cover fewer than "
+            f"{DRY_SPELL_DAYS} days and are left out of the dry-spell count"
+        )
     out.append(
         HazardEstimate(
             "dry_spell",
             int((runs >= DRY_SPELL_DAYS).sum()),
-            n_members,
+            len(covered),
             start,
             end,
             names,
@@ -142,7 +155,7 @@ def estimate_hazards(
                 value=DRY_SPELL_DAYS,
                 unit="days",
             ),
-            [f"Median longest dry run across members: {int(np.median(runs))} days"],
+            dry_notes,
         )
     )
 

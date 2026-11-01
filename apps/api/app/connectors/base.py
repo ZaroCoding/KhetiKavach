@@ -200,10 +200,12 @@ async def fetch_computed(
     ttl_s: int,
     timeout_s: float,
     request_url: str,
+    attempts: int = 2,
 ) -> FetchResult:
     """Same contract as fetch_json for sources read through an SDK (STAC + COG windows).
 
     `fn` performs the upstream work and returns JSON-serialisable data; its result is cached.
+    `attempts=1` skips the retry, for callers that already have a named fallback source to move to.
     """
     key = cache_key(source, request_url, key_parts, None)
     cached = await _cached(key)
@@ -222,7 +224,7 @@ async def fetch_computed(
     if cached and cached["expires_at"] > datetime.now(UTC):
         return FetchResult(source, cached["response"], "cached", cached["fetched_at"], request_url)
     last_error = ""
-    for attempt in range(2):
+    for attempt in range(attempts):
         t0 = time.perf_counter()
         try:
             data = await asyncio.wait_for(fn(), timeout=timeout_s)
@@ -232,7 +234,7 @@ async def fetch_computed(
         except Exception as exc:
             last_error = f"{type(exc).__name__}: {exc}"[:300]
             await record_health(source, False, int((time.perf_counter() - t0) * 1000), last_error)
-            if attempt == 0:
+            if attempt < attempts - 1:
                 await asyncio.sleep(0.6)
     if cached:
         return FetchResult(

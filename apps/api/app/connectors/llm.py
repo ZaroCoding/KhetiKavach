@@ -136,6 +136,9 @@ async def draft_plan(
     prompt = build_prompt(field, risks, evidence, passages, feedback)
     digest = hashlib.sha256((system + prompt).encode()).hexdigest()
     errors: list[str] = []
+    # One attempt each: the other provider is the retry. Gemini's Flash alias was measured at
+    # 70-160 s under load (2026-11-01) while Groq answered in 4 s: Gemini gets the shorter budget.
+    budget = {"gemini": 25.0, "groq": 30.0}
     for source, fn in (("gemini", _gemini), ("groq", _groq)):
 
         async def call(fn: Any = fn) -> dict[str, Any]:
@@ -148,8 +151,9 @@ async def draft_plan(
                 {"prompt_sha256": digest},
                 call,
                 ttl_s=6 * 3600,
-                timeout_s=45,
+                timeout_s=budget[source],
                 request_url=f"{source}:generateContent",
+                attempts=1,
             )
             return DraftPlan.model_validate(res.data), source
         except SourceUnavailable as exc:

@@ -311,8 +311,10 @@ Item shape [R-7].
 
 ### POST /api/admin/sources/{source}/disable and /enable
 Header `X-Admin-Key`, no body. `{source}` is a `SourceName`; otherwise 404 `NOT_FOUND` [R-7].
-Response **200**: the single item shape above. State persists in `source_switches`. A disabled
-source's connector reports `status: "unavailable"` and triggers its fallback.
+Response **200**: the single item shape above. State persists in `source_switches`. While a source
+is disabled its connector makes no upstream call [B-25]: it serves the last real cached response
+with `status: "cached"` and a `note` saying the admin switched the source off; when nothing is
+cached it reports the source `unavailable` and the agent falls back to the next source in its chain.
 
 ## SSE events
 
@@ -644,3 +646,17 @@ Each item also carries `"state": "<string>"`, `"plan_title": "<string>"`, `"plan
   `UPSTREAM_UNAVAILABLE`, not 500. A wrong method on an existing route returns **405**
   `METHOD_NOT_ALLOWED`. `POST /api/assessments` validates `as_of` (422) before it reads the
   database, so a malformed request never depends on it.
+- **B-24 Archive, replay and ensemble data (checked live, 2026-11-01).** Archive API requests use
+  `models=era5_seamless`: rain comes from ERA5 and soil moisture from ERA5-Land, identical to the
+  `era5_land` values over the 10-year soil climatology window; `era5_land` alone returns no
+  precipitation, which left every replay without "what actually fell" and forced the NASA POWER
+  fallback. Single Runs replays group hourly values into **UTC** days, because a 00 UTC run starts
+  at 05:30 IST and IST days left only nine usable days (so a 10-day dry spell could never be seen,
+  and the first day's rain was dropped). A dry-spell count leaves out members with fewer than 10
+  valid days (the multi-model fallback includes models that stop at 7 or 9 days) and says so in
+  `explanation`. Ensemble requests use the id Open-Meteo documents, `ecmwf_ifs025_ensemble`
+  (the older `ecmwf_ifs025` still answers with identical numbers) and `ncep_gefs025`.
+- **B-25 Kill switch.** Supersedes the "reports unavailable" wording of Q-19: a disabled source
+  serves its last real cached response, flagged `cached` with a note, and only reports
+  `unavailable` (triggering the fallback chain) when it has nothing cached. A disabled
+  `sentinel_hub` does not request an OAuth token.

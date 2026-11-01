@@ -1,13 +1,15 @@
 """Connector logic: parsing, aggregation and failure paths (failure simulated with respx)."""
 
 from datetime import date
+from typing import Any
 
 import httpx
 import numpy as np
 import pytest
 import respx
 
-from app.connectors.base import SourceUnavailable, fetch_json
+from app.connectors import llm
+from app.connectors.base import SourceUnavailable, fetch_computed, fetch_json
 from app.connectors.nasa_power import parse_power_series
 from app.connectors.open_meteo import hourly_to_daily_members
 from app.connectors.satellite import parse_statistics
@@ -114,3 +116,66 @@ async def test_nominatim_boundary_category_parsed() -> None:
     bbox, res = await district_bbox("Ludhiana district, Punjab, India")
     assert bbox == (75.3, 30.5, 76.3, 31.0)
     assert res.status == "live"
+
+
+async def test_fetch_computed_retries_once_by_default() -> None:
+    calls = {"n": 0}
+
+    async def slow() -> Any:
+        calls["n"] += 1
+        raise RuntimeError("upstream down")
+
+    with pytest.raises(SourceUnavailable):
+        await fetch_computed(
+            "groq", {"t": "default"}, slow, ttl_s=1, timeout_s=1, request_url="test://default"
+        )
+    assert calls["n"] == 2
+
+
+async def test_fetch_computed_single_attempt_skips_the_retry() -> None:
+    calls = {"n": 0}
+
+    async def slow() -> Any:
+        calls["n"] += 1
+        raise RuntimeError("upstream down")
+
+    with pytest.raises(SourceUnavailable):
+        await fetch_computed(
+            "groq", {"t": "once"}, slow, ttl_s=1, timeout_s=1, request_url="test://once", attempts=1
+        )
+    assert calls["n"] == 1
+
+
+async def test_draft_plan_moves_to_groq_after_one_failed_gemini_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {"gemini": 0, "groq": 0}
+    test_plan = {
+        "summary": "test summary",
+        "actions": [
+            {"text": "test action", "when": "2026-11-02", "citation_id": "p1", "numbers_used": []}
+        ],
+    }
+
+    async def overloaded(system: str, prompt: str) -> dict[str, Any]:
+        calls["gemini"] += 1
+        raise RuntimeError("503 UNAVAILABLE")
+
+    async def answers(system: str, prompt: str) -> dict[str, Any]:
+        calls["groq"] += 1
+        return test_plan
+
+    monkeypatch.setattr(llm, "_gemini", overloaded)
+    monkeypatch.setattr(llm, "_groq", answers)
+    field = {"crop": "wheat", "sowing_date": "2026-10-28", "district_code": "PB_LUDHIANA"}
+    passage = {
+        "id": "p1",
+        "doc_title": "t",
+        "plan_year": 2011,
+        "page": 1,
+        "scenario": "s",
+        "text": "x",
+    }
+    plan, provider = await llm.draft_plan(field, [], {}, [passage], "en")
+    assert provider == "groq" and plan.summary == "test summary"
+    assert calls == {"gemini": 1, "groq": 1}  # no second Gemini attempt before the fallback

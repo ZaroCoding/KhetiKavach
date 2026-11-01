@@ -16,13 +16,21 @@ import logging
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import date, timedelta
 from typing import Any
 
 import numpy as np
 
 from app.config import get_settings
-from app.connectors.base import FetchResult, SourceUnavailable, client, fetch_computed, fetch_json
+from app.connectors.base import (
+    FetchResult,
+    SourceUnavailable,
+    client,
+    fetch_computed,
+    fetch_json,
+    is_disabled,
+)
 
 log = logging.getLogger("satellite")
 _pool = ThreadPoolExecutor(max_workers=8)
@@ -108,7 +116,9 @@ def parse_statistics(payload: dict[str, Any]) -> list[Obs]:
 async def s2_sentinel_hub(
     geom: dict[str, Any], as_of: date, first_year: int = 2017
 ) -> tuple[list[Obs], FetchResult]:
-    token = await _cdse_token()
+    # A source switched off by the admin must not even ask for a token: fetch_json then serves the
+    # last real response (with a note) or raises, and no request leaves the building.
+    token = None if await is_disabled("sentinel_hub") else await _cdse_token()
 
     async def year(y: int) -> FetchResult:
         start, end = date(y, 1, 1), min(date(y, 12, 31), as_of)
@@ -135,7 +145,7 @@ async def s2_sentinel_hub(
             CDSE_STATS_URL,
             method="POST",
             json_body=body,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}"} if token else None,
             ttl_s=6 * 3600 if recent else 365 * 86400,
             timeout_s=get_settings().imagery_timeout_s,
         )
@@ -210,6 +220,29 @@ def _read_field(href: str, geom: dict[str, Any], ref: Any = None) -> tuple[Any, 
                 return vrt.read(1).astype("float32"), None, ref
 
 
+def _plausible_digital_numbers(*bands: Any) -> bool:
+    """Real L2A digital numbers rise far above 255 over land (the NIR band alone reaches
+    thousands). A scene whose clear pixels all sit at or below 255 is a corrupt file: Planetary
+    Computer served the newest scenes this way on 2026-10-28/29, giving NDVI near 0 and cloud 0 over
+    green fields, which would have counted as the latest clear scene."""
+    return any(float(np.max(band)) > 255 for band in bands)
+
+
+def dedupe_by_date(series: list[Obs]) -> list[Obs]:
+    """Neighbouring tiles overlap, so one field can have two scenes on the same day. Keep the one
+    with real values and the least cloud."""
+    best: dict[str, Obs] = {}
+    for obs in series:
+        key = str(obs["date"])
+        rank = (obs.get("ndvi") is None, float(obs["cloud_frac"]))
+        if key not in best or rank < (
+            best[key].get("ndvi") is None,
+            float(best[key]["cloud_frac"]),
+        ):
+            best[key] = obs
+    return sorted(best.values(), key=lambda o: str(o["date"]))
+
+
 def _s2_item_stats(item: Any, geom: dict[str, Any]) -> Obs | None:
     baseline = float(item.properties.get("s2:processing_baseline", "0") or 0)
     offset = -1000.0 if baseline >= 4.0 else 0.0  # L2A BOA_ADD_OFFSET from baseline 04.00 (2022)
@@ -225,6 +258,9 @@ def _s2_item_stats(item: Any, geom: dict[str, Any]) -> Obs | None:
     day = item.datetime.date().isoformat()
     if clear.sum() < 3:
         return {"date": day, "ndvi": None, "ndmi": None, "cloud_frac": cloud}
+    if not _plausible_digital_numbers(red[clear], nir[clear], swir[clear]):
+        log.warning("dropping scene %s: band values squeezed into 0-255", item.id)
+        return None  # a corrupt file is dropped, never scored as a "clear" scene
     r, n, s = ((band[clear] + offset) / 10000.0 for band in (red, nir, swir))
     with np.errstate(divide="ignore", invalid="ignore"):
         ndvi = float(np.nanmean((n - r) / (n + r)))
@@ -232,51 +268,80 @@ def _s2_item_stats(item: Any, geom: dict[str, Any]) -> Obs | None:
     return {"date": day, "ndvi": round(ndvi, 4), "ndmi": round(ndmi, 4), "cloud_frac": cloud}
 
 
+async def _s2_window(geom: dict[str, Any], start: date, end: date, ttl_s: int) -> FetchResult:
+    """Observations for one date window, cached on their own so a retry resumes where it stopped."""
+
+    async def work() -> list[Obs]:
+        loop = asyncio.get_running_loop()
+        items = await loop.run_in_executor(
+            _pool,
+            _pc_search,
+            "sentinel-2-l2a",
+            geom,
+            start,
+            end,
+            {"eo:cloud_cover": {"lt": 60}},
+            40,
+        )
+        stats = await asyncio.gather(
+            *(loop.run_in_executor(_pool, _s2_item_stats, it, geom) for it in items),
+            return_exceptions=True,
+        )
+        return [s for s in stats if isinstance(s, dict)]
+
+    return await fetch_computed(
+        "planetary_computer_s2",
+        {"geom": geom, "start": str(start), "end": str(end)},
+        work,
+        ttl_s=ttl_s,
+        timeout_s=get_settings().imagery_timeout_s * 3,
+        request_url=f"{PC_STAC}/search?collections=sentinel-2-l2a&datetime={start}/{end}",
+    )
+
+
 async def s2_planetary(
     geom: dict[str, Any], as_of: date, first_year: int = 2017, half_window: int = 45
 ) -> tuple[list[Obs], FetchResult]:
-    async def work() -> list[Obs]:
-        loop = asyncio.get_running_loop()
-        windows = [(as_of - timedelta(days=120), as_of)]
-        for y in range(first_year, as_of.year):
-            centre = date(y, as_of.month, min(as_of.day, 28))
-            windows.append(
-                (centre - timedelta(days=half_window), centre + timedelta(days=half_window))
-            )
-        lists = await asyncio.gather(
-            *(
-                loop.run_in_executor(
-                    _pool,
-                    _pc_search,
-                    "sentinel-2-l2a",
-                    geom,
-                    s,
-                    e,
-                    {"eo:cloud_cover": {"lt": 60}},
-                    40,
-                )
-                for s, e in windows
-            )
-        )
-        items = {it.id: it for lst in lists for it in lst}
-        stats = await asyncio.gather(
-            *(loop.run_in_executor(_pool, _s2_item_stats, it, geom) for it in items.values()),
-            return_exceptions=True,
-        )
-        series = sorted((s for s in stats if isinstance(s, dict)), key=lambda o: str(o["date"]))
-        if not series:
-            raise SourceUnavailable("planetary_computer_s2", "no readable Sentinel-2 scenes")
-        return series
+    """Current scenes plus the same season in earlier years, read window by window.
 
-    res = await fetch_computed(
-        "planetary_computer_s2",
-        {"geom": geom, "as_of": str(as_of)},
-        work,
-        ttl_s=6 * 3600,
-        timeout_s=get_settings().imagery_timeout_s * 4,
-        request_url=f"{PC_STAC}/search?collections=sentinel-2-l2a",
-    )
-    return list(res.data), res
+    The current window is required. Each earlier season is cached on its own (past scenes never
+    change) and read best-effort inside a time budget, two at a time: a slow upstream costs history
+    years, which the result's note names, instead of the whole answer.
+    """
+    current = await _s2_window(geom, as_of - timedelta(days=120), as_of, 6 * 3600)
+    windows = []
+    for y in range(first_year, as_of.year):
+        centre = date(y, as_of.month, min(as_of.day, 28))
+        windows.append((centre - timedelta(days=half_window), centre + timedelta(days=half_window)))
+
+    gate = asyncio.Semaphore(2)
+
+    async def season(start: date, end: date) -> FetchResult:
+        async with gate:
+            return await _s2_window(geom, start, end, 365 * 86400)
+
+    tasks = [asyncio.create_task(season(s, e)) for s, e in windows]
+    budget = get_settings().imagery_timeout_s * 4
+    done, pending = await asyncio.wait(tasks, timeout=budget) if tasks else (set(), set())
+    for task in pending:
+        task.cancel()
+    series: list[Obs] = list(current.data)
+    missing = len(pending)
+    for task in done:
+        if not task.cancelled() and task.exception() is None:
+            series.extend(task.result().data)
+        else:
+            missing += 1
+    series = dedupe_by_date(series)
+    if not series:
+        raise SourceUnavailable("planetary_computer_s2", "no readable Sentinel-2 scenes")
+    note = current.note
+    if missing:
+        gap = (
+            f"{missing} of {len(windows)} earlier-season windows unavailable; anomaly uses the rest"
+        )
+        note = f"{note}; {gap}" if note else gap
+    return series, replace(current, note=note)
 
 
 def _s1_item_stats(item: Any, geom: dict[str, Any]) -> Obs | None:

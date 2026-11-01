@@ -26,12 +26,12 @@ ToolFn = Callable[[dict[str, Any]], Awaitable[ToolOutput]]
 
 
 async def ecmwf_ensemble(ctx: dict[str, Any]) -> ToolOutput:
-    fc, res = await open_meteo.ensemble(ctx["lat"], ctx["lon"], "ecmwf_ifs025")
+    fc, res = await open_meteo.ensemble(ctx["lat"], ctx["lon"], open_meteo.ECMWF_ENSEMBLE)
     return ToolOutput(fc, res)
 
 
 async def gefs_ensemble(ctx: dict[str, Any]) -> ToolOutput:
-    fc, res = await open_meteo.ensemble(ctx["lat"], ctx["lon"], "ncep_gefs025")
+    fc, res = await open_meteo.ensemble(ctx["lat"], ctx["lon"], open_meteo.GEFS_ENSEMBLE)
     return ToolOutput(fc, res)
 
 
@@ -190,10 +190,6 @@ def chains_for(mode: str, month: int) -> dict[str, list[str]]:
             "observed_after": ["observed_after"],
         }
     return chains
-
-
-def utcnow() -> datetime:
-    return datetime.now(UTC)
 
 
 def today_utc() -> date:

@@ -2,8 +2,11 @@
 
   Ensemble API     live probabilistic forecast: ECMWF IFS 51 members / 15 days, NOAA GEFS 31 / 10.
   Forecast API     multi-model deterministic fallback; recent rain (past_days); modelled soil.
-  Archive API      ERA5-Land: antecedent rain/soil for a past date, soil climatology, and what
-                   actually fell after a Time Machine date (display only, never an input).
+  Archive API      ERA5-Seamless: antecedent rain/soil for a past date, soil climatology, and what
+                   actually fell after a Time Machine date (display only, never an input). The
+                   plain ERA5-Land model returns no precipitation (verified live, 2026-11-01);
+                   Seamless takes rain from ERA5 and soil moisture from ERA5-Land, identical to
+                   the ERA5-Land values over the whole 10-year climatology window.
   Single Runs API  the forecast actually issued on a past date (ECMWF IFS from 2024-03-14).
 The Historical Forecast API is deliberately NOT used for replays: it stitches the first hours of
 each run into one series, which would leak observed weather into a "forecast".
@@ -27,7 +30,10 @@ ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 SINGLE_RUNS_URL = "https://single-runs-api.open-meteo.com/v1/forecast"
 SINGLE_RUNS_FIRST_DATE = date(2024, 3, 14)
 TZ = "Asia/Kolkata"
-ENSEMBLE_DAYS = {"ecmwf_ifs025": 15, "ncep_gefs025": 10}
+ECMWF_ENSEMBLE = "ecmwf_ifs025_ensemble"  # the id the Open-Meteo ensemble docs list
+GEFS_ENSEMBLE = "ncep_gefs025"
+ARCHIVE_MODEL = "era5_seamless"
+ENSEMBLE_DAYS = {ECMWF_ENSEMBLE: 15, GEFS_ENSEMBLE: 10}
 DETERMINISTIC_MODELS = [
     "ecmwf_ifs025",
     "gfs_seamless",
@@ -134,7 +140,13 @@ async def multi_model(lat: float, lon: float, days: int = 10) -> tuple[MemberFor
 async def single_run(
     lat: float, lon: float, issued: date, days: int = 10
 ) -> tuple[MemberForecast, FetchResult]:
-    """The ECMWF IFS run actually issued at 00 UTC on `issued` (Time Machine, B-10)."""
+    """The ECMWF IFS run actually issued at 00 UTC on `issued` (Time Machine, B-10).
+
+    Days are UTC days, on purpose. A 00 UTC run starts at 05:30 IST, so grouping it into IST days
+    leaves 18 h on the first day and 5 h on the last: both fail the 20-hour rule, only nine days
+    survive, and a 10-day dry spell can never be seen (verified live, 2026-11-01). UTC days give
+    ten full days.
+    """
     if issued < SINGLE_RUNS_FIRST_DATE:
         raise ValueError(f"no archived model runs before {SINGLE_RUNS_FIRST_DATE}")
     params: dict[str, Any] = {
@@ -143,7 +155,6 @@ async def single_run(
         "models": "ecmwf_ifs",
         "run": f"{issued.isoformat()}T00:00",
         "forecast_days": days,
-        "timezone": TZ,
     }
     res = await fetch_json(
         "open_meteo_single_runs",
@@ -203,7 +214,7 @@ async def archive_daily(
         "end_date": end.isoformat(),
         "daily": "precipitation_sum",
         "timezone": TZ,
-        "models": "era5_land",
+        "models": ARCHIVE_MODEL,
     }
     if hourly:
         params["hourly"] = hourly
@@ -219,7 +230,9 @@ async def archive_daily(
 async def soil_climatology(
     lat: float, lon: float, on: date, years: int = 10, half_window: int = 15
 ) -> tuple[list[float], str, FetchResult]:
-    """Daily-mean ERA5-Land root-zone soil moisture within +/-15 days of `on`, prior years."""
+    """Daily-mean ERA5-Land root-zone soil moisture within +/-15 days of `on`, prior years.
+
+    Requested through the Seamless model, whose soil moisture is ERA5-Land's, unchanged."""
     first, last = date(on.year - years, 1, 1), date(on.year - 1, 12, 31)
     res = await archive_daily(lat, lon, first, last, hourly="soil_moisture_7_to_28cm")
     h = res.data["hourly"]
