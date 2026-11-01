@@ -25,11 +25,18 @@ class JsonFormatter(logging.Formatter):
         )
 
 
+def quiet_http_loggers() -> None:
+    """httpx logs each request line, URL included, at INFO; the Telegram bot token is in its URL."""
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
     logging.basicConfig(level=get_settings().log_level, handlers=[handler], force=True)
+    quiet_http_loggers()
     await db.init_pool()
     yield
     await db.close_pool()
