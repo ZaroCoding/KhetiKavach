@@ -5,13 +5,26 @@ Revises:
 """
 
 from alembic import op
-from app.rag.scenarios import SCENARIOS
 from app.schemas import SOURCE_NAMES
 
 revision = "0001"
 down_revision = None
 branch_labels = None
 depends_on = None
+
+# doc_chunks.scenario values (CONTRACTS.md ruling B-6). Listed here, not imported from app code,
+# so the schema this migration creates cannot change when application code does.
+SCENARIOS = (
+    "early_drought",
+    "early_dry_spell",
+    "mid_drought",
+    "terminal_drought",
+    "excess_rain",
+    "unseasonal_rain",
+    "heat_cold_hail",
+    "pest_disease",
+    "general",
+)
 
 SOURCE_CHECK = "source IN (" + ", ".join(f"'{s}'" for s in SOURCE_NAMES) + ")"
 SCENARIO_CHECK = "scenario IN (" + ", ".join(f"'{s}'" for s in SCENARIOS) + ")"
