@@ -2,7 +2,7 @@
 
 **Field-level climate early warning for Indian farms. FORGE 2026 submission.**
 
-Live link :-https://climateproblem.pages.dev/
+
 
 KhetKavach ("field shield") is an AI agent that watches a registered farm field from space and from the ground. It gives the probability of a dry spell, heavy rain or harvest-time rain over the next 15 days, and writes a dated action plan that cites the official ICAR-CRIDA district contingency plan, before the damage happens.
 
