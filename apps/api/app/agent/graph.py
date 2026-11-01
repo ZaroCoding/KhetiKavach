@@ -781,6 +781,7 @@ async def finalize(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         detail={
             "status": status,
             "result_url": f"/api/assessments/{state['assessment_id']}",
+            "duration_ms": trace.elapsed_ms(),
             "degraded": degraded,
         },
     )
@@ -934,6 +935,7 @@ async def run_assessment(
             detail={
                 "status": "failed",
                 "result_url": f"/api/assessments/{assessment_id}",
+                "duration_ms": trace.elapsed_ms(),
                 "degraded": False,
             },
         )

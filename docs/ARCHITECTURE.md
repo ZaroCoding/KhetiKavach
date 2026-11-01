@@ -90,9 +90,12 @@ comes from Open-Meteo's modelled layer and is labelled "modelled".
 
 **REST + SSE routes (FastAPI).** The API boundary: field CRUD, assessment creation (202 +
 `assessment_id`), assessment retrieval, the SSE stream of trace events, sensor ingest, the
-monitor job trigger, and `/health`. Validates input with Pydantic v2 and returns 422 with a reason
-for bad polygons, dates, or crops. Kicks off the agent asynchronously and fans its step events to
-the stream.
+monitor job trigger, and `/health` (at the root, no `/api` prefix: the probe path for Docker,
+Cloud Run and the live-status block on the landing page). Validates input with Pydantic v2 and
+returns 422 with a reason for bad polygons, dates, or crops. Every non-2xx answer uses one error
+envelope (`app/errors.py`), including 405, 429 and 500, and the write routes carry an in-memory
+per-client rate limit (`app/ratelimit.py`, ruling B-22). Kicks off the agent asynchronously and
+fans its step events to the stream.
 
 **LangGraph agent.** Orchestrates an assessment as a state graph: intake, plan, parallel gather,
 quality gate with fallback loop, risk assessment, retrieval, drafting, verification, and

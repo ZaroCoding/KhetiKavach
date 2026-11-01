@@ -5,7 +5,7 @@ import hmac
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 
 from app import db
 from app.agent.graph import run_assessment
@@ -13,11 +13,13 @@ from app.alerts import messages
 from app.config import get_settings
 from app.connectors.telegram import send_message
 from app.errors import ApiError
+from app.ratelimit import rate_limit
 from app.routers.assessments import create_assessment_row, load_field
 from app.schemas import SOURCE_NAMES, AdminSource, MonitorRequest, MonitorResult, SensorReading
 
 router = APIRouter(prefix="/api")
 log = logging.getLogger("ops")
+admin_limit = rate_limit(30)  # slows guessing of X-Admin-Key (ruling B-22)
 SEVERITY_RANK = {"unknown": -1, "low": 0, "moderate": 1, "high": 2, "severe": 3}
 
 
@@ -39,7 +41,7 @@ async def _source_item(source: str) -> AdminSource:
     )
 
 
-@router.get("/admin/sources", response_model=list[AdminSource])
+@router.get("/admin/sources", response_model=list[AdminSource], dependencies=[Depends(admin_limit)])
 async def admin_sources(x_admin_key: str | None = Header(default=None)) -> list[AdminSource]:
     require_admin(x_admin_key)
     return [await _source_item(s) for s in SOURCE_NAMES]
@@ -58,12 +60,20 @@ async def _switch(source: str, disabled: bool, key: str | None) -> AdminSource:
     return await _source_item(source)
 
 
-@router.post("/admin/sources/{source}/disable", response_model=AdminSource)
+@router.post(
+    "/admin/sources/{source}/disable",
+    response_model=AdminSource,
+    dependencies=[Depends(admin_limit)],
+)
 async def disable(source: str, x_admin_key: str | None = Header(default=None)) -> AdminSource:
     return await _switch(source, True, x_admin_key)
 
 
-@router.post("/admin/sources/{source}/enable", response_model=AdminSource)
+@router.post(
+    "/admin/sources/{source}/enable",
+    response_model=AdminSource,
+    dependencies=[Depends(admin_limit)],
+)
 async def enable(source: str, x_admin_key: str | None = Header(default=None)) -> AdminSource:
     return await _switch(source, False, x_admin_key)
 
@@ -83,7 +93,7 @@ def alert_due(
     return due
 
 
-@router.post("/jobs/monitor", response_model=MonitorResult)
+@router.post("/jobs/monitor", response_model=MonitorResult, dependencies=[Depends(admin_limit)])
 async def monitor(
     body: MonitorRequest | None = None, x_admin_key: str | None = Header(default=None)
 ) -> MonitorResult:

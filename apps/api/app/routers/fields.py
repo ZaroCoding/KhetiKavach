@@ -5,7 +5,7 @@ import secrets
 import string
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app import db
 from app.agent.tools import today_utc
@@ -17,10 +17,12 @@ from app.geo.validate import (
     validate_polygon,
     validate_sowing_date,
 )
+from app.ratelimit import rate_limit
 from app.routers.districts import district_bbox
 from app.schemas import FieldCreate, FieldOut
 
 router = APIRouter(prefix="/api")
+field_limit = rate_limit(20)  # ruling B-22
 ALPHABET = string.ascii_uppercase + string.digits
 SELECT = """SELECT id::text AS id, short_code, name, ST_AsGeoJSON(geom) AS geojson, crop,
                    sowing_date, district_code, created_at FROM fields"""
@@ -39,7 +41,9 @@ def row_to_field(r: Any) -> FieldOut:
     )
 
 
-@router.post("/fields", response_model=FieldOut, status_code=201)
+@router.post(
+    "/fields", response_model=FieldOut, status_code=201, dependencies=[Depends(field_limit)]
+)
 async def create_field(body: FieldCreate) -> FieldOut:
     district = DISTRICTS.get(body.district_code)
     if district is None:

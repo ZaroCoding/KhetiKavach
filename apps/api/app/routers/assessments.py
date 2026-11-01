@@ -10,18 +10,21 @@ from collections.abc import AsyncIterator
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from app import db
 from app.agent.graph import run_assessment
 from app.agent.tools import today_utc
 from app.errors import ApiError, validation_error
+from app.ratelimit import rate_limit
 from app.schemas import AssessmentAccepted, AssessmentCreate, AssessmentOut
 
 router = APIRouter(prefix="/api")
 _tasks: set[asyncio.Task[Any]] = set()  # keep references so tasks are not garbage-collected
 EARLIEST_AS_OF = date(2021, 1, 1)
+# Each assessment spends upstream quota, and the demo path has no login (ruling B-22).
+assessment_limit = rate_limit(10)
 
 
 def _uuid_or_404(value: str, what: str) -> str:
@@ -65,13 +68,15 @@ async def create_assessment_row(field_id: str, as_of: date | None, language: str
     return str(aid)
 
 
-@router.post("/assessments", response_model=AssessmentAccepted, status_code=202)
+@router.post(
+    "/assessments",
+    response_model=AssessmentAccepted,
+    status_code=202,
+    dependencies=[Depends(assessment_limit)],
+)
 async def create(body: AssessmentCreate) -> AssessmentAccepted:
     field_id = _uuid_or_404(body.field_id, "field")
-    field = await load_field(field_id)
-    if field is None:
-        raise ApiError(404, "field not found")
-    as_of = body.as_of
+    as_of = body.as_of  # checked before the database is touched
     if as_of is not None:
         if as_of > today_utc():
             raise validation_error("as_of", "as_of cannot be in the future")
@@ -79,6 +84,9 @@ async def create(body: AssessmentCreate) -> AssessmentAccepted:
             raise validation_error("as_of", "as_of must be on or after 2021-01-01")
         if as_of == today_utc():
             as_of = None  # ruling B-10: today is live
+    field = await load_field(field_id)
+    if field is None:
+        raise ApiError(404, "field not found")
     if as_of is not None and as_of < field["sowing_date"]:
         raise validation_error("as_of", f"as_of is before the sowing date {field['sowing_date']}")
     aid = await create_assessment_row(field_id, as_of, body.language)

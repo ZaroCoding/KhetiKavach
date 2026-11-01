@@ -37,10 +37,12 @@ FastAPI's default 422 body is overridden with a handler that emits this envelope
 | HTTP | `code` | When |
 |---|---|---|
 | 422 | `VALIDATION_ERROR` [R-7] | Any request validation failure (schema or business rule) |
-| 404 | `NOT_FOUND` | Unknown field, assessment, or admin source |
+| 404 | `NOT_FOUND` | Unknown field, assessment, admin source, or route |
+| 405 | `METHOD_NOT_ALLOWED` [B-23] | The route exists but not for that HTTP method |
 | 401 | `UNAUTHORIZED` [R-7] | Missing/wrong `X-Device-Key`, `X-Admin-Key`, or Telegram secret |
-| 503 | `UPSTREAM_UNAVAILABLE` [R-7] | A required upstream outage with no fallback or cache |
-| 500 | `INTERNAL_ERROR` [R-7] | Unhandled server error |
+| 429 | `RATE_LIMITED` [B-22] | A client exceeded a write-route limit; the response carries `Retry-After` (seconds) |
+| 503 | `UPSTREAM_UNAVAILABLE` [R-7] | A required upstream outage with no fallback or cache, or the database cannot be reached |
+| 500 | `INTERNAL_ERROR` [R-7, B-23] | Unhandled server error (fixed message; the exception text is never echoed) |
 
 For 422, `details` is `[{ "field": "<dotted path>", "reason": "<human-readable>" }]` [R-7].
 `GET /health` is the one exception: its 503 returns the health body, not this envelope [R-7].
@@ -627,3 +629,18 @@ Each item also carries `"state": "<string>"`, `"plan_title": "<string>"`, `"plan
   migrations only (keeps every query readable in Q&A).
 - **B-21** PDF text is extracted with PyMuPDF (pypdf garbles the Dharwad plan's font encoding:
   spaces come out as "m", hyphens as "D").
+- **B-22 Rate limits.** The demo path has no login and every assessment spends free-tier quota, so
+  the routes that start work are limited per client address with an in-memory sliding window of
+  60 s: `POST /api/assessments` 10, `POST /api/fields` 20, and the `X-Admin-Key` routes
+  (`GET /api/admin/sources`, `POST /api/admin/sources/{source}/disable|enable`, `POST
+  /api/jobs/monitor`) 30, counted even when the key is wrong, which slows key guessing. Over the
+  limit the API answers **429** `RATE_LIMITED` with a `Retry-After` header. The window is per
+  process; behind Cloud Run the client address comes from `X-Forwarded-For`. Reads, the SSE
+  stream, `/health`, the Telegram webhook (secret-checked) and sensor ingest (device-keyed) are
+  not limited.
+- **B-23 Error mapping.** An unhandled exception returns **500** `INTERNAL_ERROR` with a fixed
+  message; the log records the exception type and route, never its text (it can contain a URL with
+  a token). A lost database connection (`asyncpg` connection errors) returns **503**
+  `UPSTREAM_UNAVAILABLE`, not 500. A wrong method on an existing route returns **405**
+  `METHOD_NOT_ALLOWED`. `POST /api/assessments` validates `as_of` (422) before it reads the
+  database, so a malformed request never depends on it.

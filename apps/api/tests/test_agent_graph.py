@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import numpy as np
+import pytest
 
 from app.agent.graph import run_assessment
 from app.agent.tools import ToolOutput
@@ -170,6 +171,22 @@ async def test_fallback_then_verifier_rejects_then_passes() -> None:
     assert fallback["detail"]["to_source"] == "open_meteo_ensemble"
     dry = next(r for r in rec.state["risks"] if r.hazard == "dry_spell")
     assert dry.members.gfs.exceeding == 15 and dry.members.gfs.total == 31
+    done = trace.events[-1]["detail"]  # CONTRACTS.md: done carries status, result_url, duration_ms
+    assert set(done) == {"status", "result_url", "duration_ms", "degraded"}
+    assert isinstance(done["duration_ms"], int) and done["duration_ms"] >= 0
+    assert done["degraded"] is True and done["status"] == "completed_degraded"
+
+
+async def test_failed_run_still_ends_with_error_then_done_with_duration() -> None:
+    rec, trace = Recorder(), Trace("a4", persist=False)
+    broken_field = {k: v for k, v in TEST_FIELD.items() if k != "crop"}  # test input: no crop
+    with pytest.raises(KeyError):
+        await run_assessment(
+            "a4", broken_field, None, "en", trace=trace, deps=_deps(ecmwf, None, rec)
+        )
+    assert [e["event"] for e in trace.events[-2:]] == ["error", "done"]  # B-4: done follows error
+    done = trace.events[-1]["detail"]
+    assert done["status"] == "failed" and isinstance(done["duration_ms"], int)
 
 
 async def test_llm_down_gives_rule_based_plan_with_citations() -> None:

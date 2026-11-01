@@ -18,6 +18,14 @@ gcloud run deploy khetkavach-api --source apps/api --region asia-south1 \
 ```
 The container runs `alembic upgrade head` before serving.
 
+Check it came up. `/health` is at the root (no `/api` prefix); it is the same path the container
+`HEALTHCHECK` and `docker-compose.yml` probe, and it answers 503 only when the database is down:
+```bash
+curl -fsS https://<api-url>/health     # 200, "db": {"status": "ok"}, "model_version": "dryspell-lgbm-v1"
+curl -fsS https://<api-url>/api/districts   # both districts, each with a bbox and plan_chunks > 0
+```
+`"status": "degraded"` with HTTP 200 means a source has failed or is switched off, not that the API is down.
+
 ## Monitoring every 6 hours (Cloud Scheduler)
 ```bash
 gcloud scheduler jobs create http khetkavach-monitor --location asia-south1 --schedule "0 */6 * * *" \

@@ -4,6 +4,7 @@ route replays and tails that table, so the stream works across instances and sur
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,6 +29,11 @@ class Trace:
         self.fallbacks = 0
         self._seq = 0
         self._lock = asyncio.Lock()
+        self._started = time.perf_counter()
+
+    def elapsed_ms(self) -> int:
+        """Milliseconds since the run began: the `duration_ms` the `done` event must carry."""
+        return int((time.perf_counter() - self._started) * 1000)
 
     async def emit(
         self,

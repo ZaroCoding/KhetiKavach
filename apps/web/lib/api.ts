@@ -2,6 +2,7 @@ import type {
   AdminSource,
   ApiErrorBody,
   Assessment,
+  AssessmentStatus,
   District,
   EventName,
   Field,
@@ -77,7 +78,7 @@ export const api = {
     district_code: string;
   }) => request<Field>("/api/fields", { method: "POST", body: JSON.stringify(body) }),
   startAssessment: (field_id: string, language: Language, as_of?: string) =>
-    request<{ assessment_id: string; stream_url: string; result_url: string }>("/api/assessments", {
+    request<{ assessment_id: string; status: AssessmentStatus; stream_url: string; result_url: string }>("/api/assessments", {
       method: "POST",
       body: JSON.stringify({ field_id, language, as_of: as_of || null }),
     }),

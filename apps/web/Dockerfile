@@ -19,4 +19,8 @@ COPY --from=build --chown=appuser /app/.next/standalone ./
 COPY --from=build --chown=appuser /app/.next/static ./.next/static
 USER appuser
 EXPOSE 3000
+# The web app has no /health of its own: a 200 from the landing page is its liveness signal.
+# (The API's probe path is /health; see apps/api/Dockerfile and docker-compose.yml.)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "server.js"]
